@@ -55,7 +55,13 @@ def download_and_extract(url, binary_name):
         shutil.rmtree(temp_dir)
         sys.exit(1)
 
-    shutil.move(os.path.join(temp_dir, binary_name), os.path.dirname(os.path.realpath(__file__)))
+    binary_path = os.path.join(temp_dir, binary_name)
+
+    # Make the binary executable
+    os.chmod(binary_path, 0o755)
+
+    # Move the binary to the script directory
+    shutil.move(binary_path, os.path.dirname(os.path.realpath(__file__)))
 
     shutil.rmtree(temp_dir)
 
