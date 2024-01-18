@@ -92,7 +92,7 @@ def main():
 
     # Use Nuclei to scan the live subdomains with a specific template
     print("Scanning live subdomains with Nuclei...")
-    run_command(f"nuclei -l {domain}_httpx -t ~/nuclei-templates/ -me {domain}_nuclei", "Nuclei")
+    run_command(f"nuclei -l {domain}_httpx -t ~/nuclei-templates/ -severity critical,high,medium,low,info -me {domain}_nuclei", "Nuclei")
 
     print("Done!")
 
