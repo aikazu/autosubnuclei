@@ -1,32 +1,37 @@
 #!/usr/bin/env python3
-import subprocess
-import sys
+
 import os
+import sys
 import shutil
 import requests
 import zipfile
 import tempfile
+import subprocess
 
 GITHUB_API_URL = "https://api.github.com/repos/projectdiscovery/{binary}/releases/latest"
 
 def get_amd64_zip_url(release_info):
+    """Extracts the download URL for the amd64 zip asset from the release info."""
     assets = release_info.get("assets", [])
     for asset in assets:
         if "amd64" in asset["name"].lower() and asset["name"].endswith(".zip"):
             return asset["browser_download_url"]
-
+    print("No suitable asset found for amd64 architecture.")
     sys.exit(1)
 
 def get_latest_release_url(binary):
+    """Fetches the latest release info for a given binary from GitHub."""
     url = GITHUB_API_URL.format(binary=binary)
     response = requests.get(url)
     if response.status_code != 200:
+        print(f"Failed to fetch release info for {binary}.")
         sys.exit(1)
 
     release_info = response.json()
     return get_amd64_zip_url(release_info)
 
 def run_command(command, step_name):
+    """Runs a shell command and handles errors."""
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
     output, error = process.communicate()
 
@@ -37,6 +42,7 @@ def run_command(command, step_name):
     return output.decode('utf-8')
 
 def download_and_extract(url, binary_name):
+    """Downloads and extracts a binary from a given URL."""
     print(f"{binary_name} not found, downloading...")
 
     response = requests.get(url, stream=True)
