@@ -81,7 +81,8 @@ def main():
     binaries = {
         "subfinder": get_latest_release_url("subfinder"),
         "httpx": get_latest_release_url("httpx"),
-        "nuclei": get_latest_release_url("nuclei")
+        "nuclei": get_latest_release_url("nuclei"),
+        "notify": get_latest_release_url("notify")
     }
 
     for binary, url in binaries.items():
@@ -99,6 +100,10 @@ def main():
     # Use Nuclei to scan the live subdomains with a specific template
     print("Scanning live subdomains with Nuclei...")
     run_command(f"nuclei -l {domain}_httpx -t ~/nuclei-templates/ -severity critical,high,medium,low,info -me {domain}_nuclei", "Nuclei")
+
+    # Send notification with Notify
+    print("Sending notification with Notify...")
+    run_command(f"notify -silent -data {domain}_nuclei -bulk -config notify.yaml", "Notify")
 
     print("Done!")
 
