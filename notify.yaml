@@ -1,4 +1,4 @@
 message: "{{data}}"
 discord:
-  - id: "<YOUR_DISCORD_WEBHOOK_URL>"
+  - id: "https://discord.com/api/webhooks/1243447711529959477/6z25kEHJyjzoK2oBbdKySWDk1fIKY5dD_Lh0-veAJdsOLOberHuqnNTvu2CQ5zBTiMGN"
     severity: "info,low,medium,high,critical"
