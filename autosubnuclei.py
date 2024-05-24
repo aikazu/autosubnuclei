@@ -41,6 +41,14 @@ def run_command(command, step_name):
 
     return output.decode('utf-8')
 
+def send_notification(data, title="Notification"):
+    """Sends a notification using notify."""
+    config_path = "notify.yaml"
+    with open("notification_data.txt", "w") as f:
+        f.write(data)
+    
+    run_command(f"notify -silent -data notification_data.txt -bulk -config {config_path} -title \"{title}\"", "Notify")
+
 def download_and_extract(url, binary_name):
     """Downloads and extracts a binary from a given URL."""
     print(f"{binary_name} not found, downloading...")
@@ -94,20 +102,19 @@ def main():
             download_and_extract(url, binary)
 
     # Use Subfinder to find subdomains and save them to a file
-    print("Finding subdomains with Subfinder...")
-    run_command(f"subfinder -silent -all -d {domain} -o {domain}_subfinder", "Subfinder")
+    print(f"Finding subdomains with Subfinder for {domain}...")
+    subfinder_output = run_command(f"subfinder -silent -all -d {domain} -o {domain}_subfinder", "Subfinder")
+    send_notification(subfinder_output, f"Subfinder Results for {domain}")
 
     # Use Httpx to find live subdomains and save them to a file
-    print("Finding live subdomains with Httpx...")
-    run_command(f"httpx -silent -l {domain}_subfinder -o {domain}_httpx", "Httpx")
+    print(f"Finding live subdomains with Httpx for {domain}...")
+    httpx_output = run_command(f"httpx -silent -l {domain}_subfinder -o {domain}_httpx", "Httpx")
+    send_notification(httpx_output, f"Httpx Results for {domain}")
 
     # Use Nuclei to scan the live subdomains with a specific template
-    print("Scanning live subdomains with Nuclei...")
-    run_command(f"nuclei -l {domain}_httpx -t ~/nuclei-templates/ -severity critical,high,medium,low,info -me {domain}_nuclei", "Nuclei")
-
-    # Send notification with Notify
-    print("Sending notification with Notify...")
-    run_command(f"notify -silent -data {domain}_nuclei -bulk -config notify.yaml", "Notify")
+    print(f"Scanning live subdomains with Nuclei for {domain}...")
+    nuclei_output = run_command(f"nuclei -l {domain}_httpx -t ~/nuclei-templates/ -severity critical,high,medium,low,info -v -me {domain}_nuclei", "Nuclei")
+    send_notification(nuclei_output, f"Nuclei Results for {domain}")
 
     print("Done!")
 
