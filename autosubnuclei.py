@@ -51,7 +51,12 @@ def send_notification(data, title="Notification"):
     with open("notification_data.txt", "w") as f:
         f.write(data)
     
-    run_command(f"notify -silent -data notification_data.txt -bulk -config {config_path} -title \"{title}\"", "Notify")
+    notify_command = f"notify -silent -data notification_data.txt -bulk -config {config_path} -title \"{title}\""
+    try:
+        run_command(notify_command, "Notify")
+    except Exception as e:
+        print(f"Failed to send notification: {str(e)}")
+        sys.exit(1)
 
 def download_and_extract(url, binary_name):
     """Downloads and extracts a binary from a given URL."""
