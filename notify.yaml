@@ -1,0 +1,4 @@
+message: "{{data}}"
+discord:
+  - id: "<YOUR_DISCORD_WEBHOOK_URL>"
+    severity: "info,low,medium,high,critical"
