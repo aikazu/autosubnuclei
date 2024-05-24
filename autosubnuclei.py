@@ -44,6 +44,10 @@ def run_command(command, step_name):
 def send_notification(data, title="Notification"):
     """Sends a notification using notify."""
     config_path = "notify.yaml"
+    if not os.path.exists(config_path):
+        print("Error: notify.yaml configuration file not found.")
+        sys.exit(1)
+    
     with open("notification_data.txt", "w") as f:
         f.write(data)
     
