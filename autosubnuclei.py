@@ -66,8 +66,9 @@ def download_and_extract(url, binary_name):
     # Make the binary executable
     os.chmod(binary_path, 0o755)
 
-    # Move the binary to the script directory
-    shutil.move(binary_path, os.path.dirname(os.path.realpath(__file__)))
+    # Move the binary to /usr/bin/
+    sudo_move_command = f"sudo mv {binary_path} /usr/bin/{binary_name}"
+    run_command(sudo_move_command, f"Move {binary_name} to /usr/bin/")
 
     shutil.rmtree(temp_dir)
 
@@ -87,6 +88,9 @@ def main():
 
     for binary, url in binaries.items():
         if shutil.which(binary) is None:
+            if os.geteuid() != 0:
+                print(f"The binary '{binary}' is not available. Please run the script with sudo to download and install it.")
+                sys.exit(1)
             download_and_extract(url, binary)
 
     # Use Subfinder to find subdomains and save them to a file
