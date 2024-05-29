@@ -39,6 +39,7 @@ This script automates the process of subdomain enumeration and vulnerability sca
 Run the script with the following command:
 ```sh
 ./script.py <domain>
+```
 
 
 Example:
