@@ -41,19 +41,54 @@ def run_command(command, step_name):
 
     return output.decode('utf-8')
 
-def send_notification(data, title="Notification"):
-    """Sends a notification using notify."""
-    config_path = "notify.yaml"
+def create_notify_config():
+    """Creates a notify configuration file."""
+    config_dir = os.path.expanduser("~/.config/notify")
+    config_path = os.path.join(config_dir, "provider-config.yaml")
+
     if not os.path.exists(config_path):
-        print("Error: notify.yaml configuration file not found.")
-        sys.exit(1)
-    
-    with open("notification_data.txt", "w") as f:
-        f.write(data)
-    
-    notify_command = f"notify -silent -data notification_data.txt -bulk -config {config_path} -title \"{title}\""
+        os.makedirs(config_dir, exist_ok=True)
+
+        username = input("Enter the Discord username: ")
+        webhook_url = input("Enter the Discord webhook URL: ")
+
+        config_content = f"""
+discord:
+  - id: "crawl"
+    discord_channel: "notify"
+    discord_username: "{username}"
+    discord_format: "{{{{data}}}}"
+    discord_webhook_url: "{webhook_url}"
+"""
+
+        with open(config_path, "w") as config_file:
+            config_file.write(config_content)
+
+    return config_path
+
+def send_notification(data):
+    """Sends a notification using notify."""
+    config_path = create_notify_config()
+    notification_data_file = "notification_data.txt"
+
+    # Write notification data to file
     try:
-        run_command(notify_command, "Notify")
+        with open(notification_data_file, "w") as f:
+            f.write(data)
+    except Exception as e:
+        print(f"Failed to write notification data: {str(e)}")
+        sys.exit(1)
+
+    # Confirm that the notification data file exists
+    if not os.path.exists(notification_data_file):
+        print(f"Error: {notification_data_file} file not found after writing.")
+        sys.exit(1)
+
+    # Construct and run the notify command
+    notify_command = f"./notify -silent -data {notification_data_file} -bulk -config {config_path}"
+    
+    try:
+        output = run_command(notify_command, "Notify")
     except Exception as e:
         print(f"Failed to send notification: {str(e)}")
         sys.exit(1)
@@ -83,9 +118,8 @@ def download_and_extract(url, binary_name):
     # Make the binary executable
     os.chmod(binary_path, 0o755)
 
-    # Move the binary to /usr/bin/
-    sudo_move_command = f"sudo mv {binary_path} /usr/bin/{binary_name}"
-    run_command(sudo_move_command, f"Move {binary_name} to /usr/bin/")
+    # Move the binary to the current directory
+    shutil.move(binary_path, f"./{binary_name}")
 
     shutil.rmtree(temp_dir)
 
@@ -104,26 +138,23 @@ def main():
     }
 
     for binary, url in binaries.items():
-        if shutil.which(binary) is None:
-            if os.geteuid() != 0:
-                print(f"The binary '{binary}' is not available. Please run the script with sudo to download and install it.")
-                sys.exit(1)
+        if not os.path.exists(f"./{binary}"):
             download_and_extract(url, binary)
 
     # Use Subfinder to find subdomains and save them to a file
     print(f"Finding subdomains with Subfinder for {domain}...")
-    subfinder_output = run_command(f"subfinder -silent -all -d {domain} -o {domain}_subfinder", "Subfinder")
-    send_notification(subfinder_output, f"Subfinder Results for {domain}")
+    subfinder_output = run_command(f"./subfinder -silent -all -d {domain} -o {domain}_subfinder", "Subfinder")
+    send_notification(subfinder_output)
 
     # Use Httpx to find live subdomains and save them to a file
     print(f"Finding live subdomains with Httpx for {domain}...")
-    httpx_output = run_command(f"httpx -silent -l {domain}_subfinder -o {domain}_httpx", "Httpx")
-    send_notification(httpx_output, f"Httpx Results for {domain}")
+    httpx_output = run_command(f"./httpx -silent -l {domain}_subfinder -o {domain}_httpx", "Httpx")
+    send_notification(httpx_output)
 
     # Use Nuclei to scan the live subdomains with a specific template
     print(f"Scanning live subdomains with Nuclei for {domain}...")
-    nuclei_output = run_command(f"nuclei -l {domain}_httpx -t ~/nuclei-templates/ -severity critical,high,medium,low,info -v -me {domain}_nuclei", "Nuclei")
-    send_notification(nuclei_output, f"Nuclei Results for {domain}")
+    nuclei_output = run_command(f"./nuclei -l {domain}_httpx -t ~/nuclei-templates/ -severity critical,high,medium,low,info -v -me {domain}_nuclei", "Nuclei")
+    send_notification(nuclei_output)
 
     print("Done!")
 
