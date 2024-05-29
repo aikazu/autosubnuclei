@@ -40,16 +40,6 @@ Run the script with the following command:
 ```sh
 ./script.py <domain>
 ```
-
-
-Example:
-
-sh
-
-Copy code
-
-`./script.py example.com`
-
 The script will:
 
 1. Download and extract the latest binaries for `subfinder`, `httpx`, `nuclei`, and `notify` if they are not already present.
@@ -68,8 +58,6 @@ During the first run, the script will prompt for Discord configuration details:
 These details will be saved in `~/.config/notify/provider-config.yaml`.
 
 ## File Structure
-
-Copy code
 
 `. ├── script.py └── README.md`
 
