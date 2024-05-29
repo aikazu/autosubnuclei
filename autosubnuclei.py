@@ -12,34 +12,24 @@ GITHUB_API_URL = "https://api.github.com/repos/projectdiscovery/{binary}/release
 
 def get_amd64_zip_url(release_info):
     """Extracts the download URL for the amd64 zip asset from the release info."""
-    assets = release_info.get("assets", [])
-    for asset in assets:
+    for asset in release_info.get("assets", []):
         if "amd64" in asset["name"].lower() and asset["name"].endswith(".zip"):
             return asset["browser_download_url"]
-    print("No suitable asset found for amd64 architecture.")
-    sys.exit(1)
+    sys.exit("No suitable asset found for amd64 architecture.")
 
 def get_latest_release_url(binary):
     """Fetches the latest release info for a given binary from GitHub."""
-    url = GITHUB_API_URL.format(binary=binary)
-    response = requests.get(url)
+    response = requests.get(GITHUB_API_URL.format(binary=binary))
     if response.status_code != 200:
-        print(f"Failed to fetch release info for {binary}.")
-        sys.exit(1)
-
-    release_info = response.json()
-    return get_amd64_zip_url(release_info)
+        sys.exit(f"Failed to fetch release info for {binary}.")
+    return get_amd64_zip_url(response.json())
 
 def run_command(command, step_name):
     """Runs a shell command and handles errors."""
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-    output, error = process.communicate()
-
+    process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, text=True)
     if process.returncode != 0:
-        print(f"Error at step '{step_name}': {error.decode('utf-8')}")
-        sys.exit(1)
-
-    return output.decode('utf-8')
+        sys.exit(f"Error at step '{step_name}': {process.stderr}")
+    return process.stdout
 
 def create_notify_config():
     """Creates a notify configuration file."""
@@ -48,7 +38,6 @@ def create_notify_config():
 
     if not os.path.exists(config_path):
         os.makedirs(config_dir, exist_ok=True)
-
         username = input("Enter the Discord username: ")
         webhook_url = input("Enter the Discord webhook URL: ")
 
@@ -71,27 +60,11 @@ def send_notification(data):
     config_path = create_notify_config()
     notification_data_file = "notification_data.txt"
 
-    # Write notification data to file
-    try:
-        with open(notification_data_file, "w") as f:
-            f.write(data)
-    except Exception as e:
-        print(f"Failed to write notification data: {str(e)}")
-        sys.exit(1)
+    with open(notification_data_file, "w") as f:
+        f.write(data)
 
-    # Confirm that the notification data file exists
-    if not os.path.exists(notification_data_file):
-        print(f"Error: {notification_data_file} file not found after writing.")
-        sys.exit(1)
-
-    # Construct and run the notify command
     notify_command = f"./notify -silent -data {notification_data_file} -bulk -config {config_path}"
-    
-    try:
-        output = run_command(notify_command, "Notify")
-    except Exception as e:
-        print(f"Failed to send notification: {str(e)}")
-        sys.exit(1)
+    run_command(notify_command, "Notify")
 
 def download_and_extract(url, binary_name):
     """Downloads and extracts a binary from a given URL."""
@@ -105,31 +78,19 @@ def download_and_extract(url, binary_name):
         for chunk in response.iter_content(chunk_size=128):
             zip_file.write(chunk)
 
-    try:
-        with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-            zip_ref.extractall(path=temp_dir)
-    except zipfile.BadZipFile:
-        print(f"Error: {binary_name} download failed. The file is not a valid zip file.")
-        shutil.rmtree(temp_dir)
-        sys.exit(1)
+    with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+        zip_ref.extractall(path=temp_dir)
 
     binary_path = os.path.join(temp_dir, binary_name)
-
-    # Make the binary executable
     os.chmod(binary_path, 0o755)
-
-    # Move the binary to the current directory
     shutil.move(binary_path, f"./{binary_name}")
-
     shutil.rmtree(temp_dir)
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python3 script.py <domain>")
-        sys.exit(1)
+        sys.exit("Usage: python3 script.py <domain>")
 
     domain = sys.argv[1]
-
     binaries = {
         "subfinder": get_latest_release_url("subfinder"),
         "httpx": get_latest_release_url("httpx"),
@@ -142,17 +103,14 @@ def main():
             download_and_extract(url, binary)
 
     # Use Subfinder to find subdomains and save them to a file
-    print(f"Finding subdomains with Subfinder for {domain}...")
     subfinder_output = run_command(f"./subfinder -silent -all -d {domain} -o {domain}_subfinder", "Subfinder")
     send_notification(subfinder_output)
 
     # Use Httpx to find live subdomains and save them to a file
-    print(f"Finding live subdomains with Httpx for {domain}...")
     httpx_output = run_command(f"./httpx -silent -l {domain}_subfinder -o {domain}_httpx", "Httpx")
     send_notification(httpx_output)
 
     # Use Nuclei to scan the live subdomains with a specific template
-    print(f"Scanning live subdomains with Nuclei for {domain}...")
     nuclei_output = run_command(f"./nuclei -l {domain}_httpx -t ~/nuclei-templates/ -severity critical,high,medium,low,info -v -me {domain}_nuclei", "Nuclei")
     send_notification(nuclei_output)
 
