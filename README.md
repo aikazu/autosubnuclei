@@ -1,77 +1,89 @@
-# Automated Subdomain Enumeration and Vulnerability Scanning
+# Automate Enumeration
 
-This script automates the process of subdomain enumeration and vulnerability scanning using `subfinder`, `httpx`, `nuclei`, and `notify`. It fetches the latest binaries from GitHub, executes the necessary commands, and sends notifications via Discord.
+This script is an automated security scanner that performs subdomain enumeration, live host detection, and vulnerability scanning on a given domain. It utilizes several tools from the ProjectDiscovery suite to provide a comprehensive security assessment.
 
 ## Features
 
-- **Automatic Binary Download**: Fetches the latest versions of required binaries from GitHub.
-- **Subdomain Enumeration**: Uses `subfinder` to find subdomains.
-- **Live Subdomain Detection**: Uses `httpx` to detect live subdomains.
-- **Vulnerability Scanning**: Uses `nuclei` to scan live subdomains for vulnerabilities.
-- **Notification**: Sends results to a Discord channel using `notify`.
+- Subdomain enumeration using Subfinder
+- Live host detection using httpx
+- Vulnerability scanning using Nuclei
+- Automatic downloading and updating of required tools
+- Notification system using Discord webhooks
 
-## Requirements
+## Prerequisites
 
-- Python 3.x
-- `requests` library: Install with `pip install requests`
-- Discord webhook URL
+- Python 3.6 or higher
+- Internet connection for downloading tools and scanning
 
 ## Installation
 
-1. Clone the repository:
-    ```sh
-    git clone https://github.com/yourusername/repo-name.git
-    cd repo-name
-    ```
+1. Clone this repository or download the script file.
+2. Ensure you have Python 3.6+ installed on your system.
+3. Install the required Python packages:
 
-2. Install required Python libraries:
-    ```sh
-    pip install requests
-    ```
-
-3. Make the script executable:
-    ```sh
-    chmod +x script.py
-    ```
+```bash
+pip install requests
+```
 
 ## Usage
 
 Run the script with the following command:
-```sh
-./script.py <domain>
-```
-The script will:
 
-1. Download and extract the latest binaries for `subfinder`, `httpx`, `nuclei`, and `notify` if they are not already present.
-2. Use `subfinder` to enumerate subdomains and save the output to a file.
-3. Use `httpx` to find live subdomains and save the output to a file.
-4. Use `nuclei` to scan the live subdomains for vulnerabilities.
-5. Send the results to a configured Discord channel using `notify`.
+```bash
+python3 security_scanner.py <domain>
+```
+
+Replace `<domain>` with the target domain you want to scan.
+
+### Optional Arguments
+
+- `--templates`: Specify the path to your Nuclei templates. Default is "~/nuclei-templates/".
+
+Example:
+
+```bash
+python3 security_scanner.py example.com --templates /path/to/nuclei-templates
+```
 
 ## Configuration
 
-During the first run, the script will prompt for Discord configuration details:
+On the first run, the script will prompt you to enter your Discord username and webhook URL for notifications. This information will be saved in `~/.config/notify/provider-config.yaml` for future use.
 
-- Discord username
-- Discord webhook URL
+## How It Works
 
-These details will be saved in `~/.config/notify/provider-config.yaml`.
+1. The script checks for and downloads the latest versions of required tools (subfinder, httpx, nuclei, and notify).
+2. It uses Subfinder to enumerate subdomains of the target domain.
+3. httpx is then used to identify live hosts among the discovered subdomains.
+4. Nuclei scans the live hosts for potential vulnerabilities using specified templates.
+5. Results from each step are sent as notifications via Discord using the notify tool.
 
-## File Structure
+## Output
 
-`. ├── script.py └── README.md`
+The script generates the following output files:
 
-## License
+- `<domain>_subfinder`: List of discovered subdomains
+- `<domain>_httpx`: List of live hosts
+- `<domain>_nuclei`: Detailed vulnerability scan results
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+## Security Considerations
+
+- This tool should only be used on domains you have permission to scan.
+- Be aware of the potential impact of scanning activities on target systems.
+- Review and understand the Nuclei templates you're using to avoid unintended consequences.
+
+## Troubleshooting
+
+If you encounter any issues:
+
+1. Ensure you have the latest version of the script and required Python packages.
+2. Check your internet connection.
+3. Verify that you have the necessary permissions to write to the script's directory and the config directory.
+4. If issues persist, check the error messages for more details on the problem.
 
 ## Contributing
 
-Contributions are welcome! Please fork the repository and create a pull request with your changes.
+Contributions to improve the script are welcome. Please feel free to submit pull requests or open issues for bugs and feature requests.
 
-## Acknowledgements
+## Disclaimer
 
-- [subfinder](https://github.com/projectdiscovery/subfinder)
-- [httpx](https://github.com/projectdiscovery/httpx)
-- [nuclei](https://github.com/projectdiscovery/nuclei)
-- [notify](https://github.com/projectdiscovery/notify)
+This tool is for educational and ethical testing purposes only. The authors are not responsible for any misuse or damage caused by this program. Always ensure you have explicit permission to scan the target domain.
