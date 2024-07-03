@@ -22,8 +22,12 @@ def get_amd64_zip_url(release_info):
 
 def get_latest_release_url(binary):
     """Fetches the latest release info for a given binary from GitHub."""
-    response = requests.get(GITHUB_API_URL.format(binary=binary))
-    response.raise_for_status()
+    try:
+        response = requests.get(GITHUB_API_URL.format(binary=binary))
+        response.raise_for_status()
+    except requests.exceptions.RequestException as err:
+        print(f"An error occurred while fetching the latest release info for {binary}: {err}")
+        return None
     return get_amd64_zip_url(response.json())
 
 def run_command(command):
@@ -69,10 +73,14 @@ def download_and_extract(url, binary_name):
 
     with tempfile.TemporaryDirectory() as temp_dir:
         zip_file_path = Path(temp_dir) / f"{binary_name}.zip"
-        
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
-        
+
+        try:
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as err:
+            print(f"An error occurred while downloading {binary_name}: {err}")
+            return
+
         with zip_file_path.open("wb") as zip_file:
             for chunk in response.iter_content(chunk_size=8192):
                 zip_file.write(chunk)
