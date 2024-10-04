@@ -8,12 +8,16 @@ This script is an automated security scanner that performs subdomain enumeration
 - Live host detection using httpx
 - Vulnerability scanning using Nuclei
 - Automatic downloading and updating of required tools
-- Notification system using Discord webhooks
+- Notification system using Discord webhooks (optional)
+- **Improved error handling and progress indication**
+- **Flexible output directory**
+- **Configuration file for storing Discord webhook settings**
 
 ## Prerequisites
 
 - Python 3.6 or higher
 - Internet connection for downloading tools and scanning
+- `requests` and `tqdm` Python packages: `pip install requests tqdm`
 
 ## Installation
 
@@ -22,7 +26,7 @@ This script is an automated security scanner that performs subdomain enumeration
 3. Install the required Python packages:
 
 ```bash
-pip install requests
+pip install requests tqdm
 ```
 
 ## Usage
@@ -38,32 +42,34 @@ Replace `<domain>` with the target domain you want to scan.
 ### Optional Arguments
 
 - `--templates`: Specify the path to your Nuclei templates. Default is "~/nuclei-templates/".
+- `--output`: Specify the output directory for results. Default is the current directory.
+- `--no-notify`: Disable Discord notifications.
 
 Example:
 
 ```bash
-python3 security_scanner.py example.com --templates /path/to/nuclei-templates
+python3 security_scanner.py example.com --templates /path/to/nuclei-templates --output results --no-notify
 ```
 
 ## Configuration
 
-On the first run, the script will prompt you to enter your Discord username and webhook URL for notifications. This information will be saved in `~/.config/notify/provider-config.yaml` for future use.
+On the first run, the script will create a configuration file (`~/.config/scan_notifier/config.ini`) and prompt you to enter your Discord username and webhook URL. This information will be stored for future use.
 
 ## How It Works
 
-1. The script checks for and downloads the latest versions of required tools (subfinder, httpx, nuclei, and notify).
+1. The script checks for and downloads the latest versions of required tools (subfinder, httpx, nuclei, and notify) to the specified output directory.
 2. It uses Subfinder to enumerate subdomains of the target domain.
 3. httpx is then used to identify live hosts among the discovered subdomains.
 4. Nuclei scans the live hosts for potential vulnerabilities using specified templates.
-5. Results from each step are sent as notifications via Discord using the notify tool.
+5. Results from each step can optionally be sent as notifications via Discord using the notify tool.
 
 ## Output
 
-The script generates the following output files:
+The script generates the following output files in the specified output directory:
 
-- `<domain>_subfinder`: List of discovered subdomains
-- `<domain>_httpx`: List of live hosts
-- `<domain>_nuclei`: Detailed vulnerability scan results
+- `<domain>_subfinder.txt`: List of discovered subdomains
+- `<domain>_httpx.txt`: List of live hosts
+- `<domain>_nuclei.txt`: Detailed vulnerability scan results
 
 ## Security Considerations
 
@@ -87,3 +93,12 @@ Contributions to improve the script are welcome. Please feel free to submit pull
 ## Disclaimer
 
 This tool is for educational and ethical testing purposes only. The authors are not responsible for any misuse or damage caused by this program. Always ensure you have explicit permission to scan the target domain.
+
+**Changes Made:**
+
+* Added information about the `tqdm` package.
+* Included details about the new optional arguments (`--output` and `--no-notify`).
+* Explained the configuration file and its location.
+* Updated the output file names to include the `.txt` extension.
+* Added a note about improved error handling and progress indication.
+* Minor formatting and wording improvements.
