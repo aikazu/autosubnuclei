@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 GITHUB_API_URL = "https://api.github.com/repos/projectdiscovery/{binary}/releases/latest"
 
-# Change this to create config.ini in the same directory as the script
+# Configuration file in the same directory as the script
 CONFIG_FILE = Path(__file__).parent / "config.ini"  
 
 def get_amd64_zip_url(release_info):
@@ -59,17 +59,13 @@ def create_config():
 def send_notification(data):
     """Sends a notification using notify."""
     try:
-        config = configparser.ConfigParser()
-        config.read(CONFIG_FILE)
-        username = config['discord']['username']
-        webhook_url = config['discord']['webhook_url']
-
         notification_data_file = Path("notification_data.txt")
         notification_data_file.write_text(data)
 
+        # Use the YAML config file (notify_config.yaml)
         notify_command = [
             "./notify", "-silent", "-data", str(notification_data_file), 
-            "-bulk", "-config",  str(CONFIG_FILE.parent) 
+            "-bulk", "-config", "notify_config.yaml" 
         ]
         run_command(notify_command)
     except Exception as err:

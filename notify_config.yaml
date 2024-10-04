@@ -1,0 +1,6 @@
+discord:
+  - id: "Tuyul"  # You can keep this ID or choose another
+    discord_channel: "appsec" # You can customize the channel name
+    discord_username: "your_discord_username" 
+    discord_format: "{{data}}"
+    discord_webhook_url: "your_discord_webhook_url"
