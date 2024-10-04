@@ -13,7 +13,9 @@ from pathlib import Path
 from tqdm import tqdm
 
 GITHUB_API_URL = "https://api.github.com/repos/projectdiscovery/{binary}/releases/latest"
-CONFIG_FILE = Path.home() / ".config" / "scan_notifier" / "config.ini"
+
+# Change this to create config.ini in the same directory as the script
+CONFIG_FILE = Path(__file__).parent / "config.ini"  
 
 def get_amd64_zip_url(release_info):
     """Extracts the download URL for the amd64 zip asset from the release info."""
@@ -45,7 +47,7 @@ def run_command(command):
 def create_config():
     """Creates a config file if it doesn't exist."""
     if not CONFIG_FILE.exists():
-        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        print(f"Creating config file at: {CONFIG_FILE}")
         config = configparser.ConfigParser()
         config['discord'] = {
             'username': input("Enter your Discord username: "),
