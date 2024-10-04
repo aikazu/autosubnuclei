@@ -34,7 +34,7 @@ pip install requests tqdm
 Run the script with the following command:
 
 ```bash
-python3 security_scanner.py <domain>
+python3 autosubnuclei.py <domain>
 ```
 
 Replace `<domain>` with the target domain you want to scan.
@@ -48,7 +48,7 @@ Replace `<domain>` with the target domain you want to scan.
 Example:
 
 ```bash
-python3 security_scanner.py example.com --templates /path/to/nuclei-templates --output results --no-notify
+python3 autosubnuclei.py example.com --templates /path/to/nuclei-templates --output results --no-notify
 ```
 
 ## Configuration
