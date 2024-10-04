@@ -1,1 +1,5 @@
 venv/
+httpx
+subfinder
+nuclei
+notify
