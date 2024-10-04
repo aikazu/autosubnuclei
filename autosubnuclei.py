@@ -62,7 +62,7 @@ discord:
     return config_path
 
 
-def send_notification(data, title):  # Add title parameter
+def send_notification(data, title):
     """Sends a notification using notify with a title."""
     try:
         config_path = create_notify_config()
@@ -137,25 +137,31 @@ def main():
     download_binaries(binaries, output_dir)
 
     # Use Subfinder to find subdomains
+    print("Start subfinder")  # Print start message
     subfinder_output_file = output_dir / f"{domain}_subfinder.txt"
     run_command(["./subfinder", "-silent", "-all", "-d", domain, "-o", str(subfinder_output_file)])
+    print("Subfinder success")  # Print success message
     if not args.no_notify:
-        send_notification(subfinder_output_file.read_text(), "Subfinder")  # Add title
+        send_notification(subfinder_output_file.read_text(), "Subfinder")
 
     # Use Httpx to find live subdomains
+    print("Start httpx")  # Print start message
     httpx_output_file = output_dir / f"{domain}_httpx.txt"
     run_command(["./httpx", "-silent", "-l", str(subfinder_output_file), "-o", str(httpx_output_file)])
+    print("Httpx success")  # Print success message
     if not args.no_notify:
-        send_notification(httpx_output_file.read_text(), "Httpx")  # Add title
+        send_notification(httpx_output_file.read_text(), "Httpx")
 
     # Use Nuclei to scan the live subdomains
+    print("Start nuclei")  # Print start message
     nuclei_output_file = output_dir / f"{domain}_nuclei.txt"
     run_command([
         "./nuclei", "-l", str(httpx_output_file), "-t", str(templates_path), 
         "-severity", "critical,high,medium,low,info", "-v", "-me", str(nuclei_output_file)
     ])
+    print("Nuclei success")  # Print success message
     if not args.no_notify:
-        send_notification(nuclei_output_file.read_text(), "Nuclei")  # Add title
+        send_notification(nuclei_output_file.read_text(), "Nuclei")
 
     print("Scan completed successfully!")
 
