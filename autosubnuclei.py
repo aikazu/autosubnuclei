@@ -8,14 +8,10 @@ import zipfile
 import tempfile
 import subprocess
 import argparse
-import configparser
 from pathlib import Path
 from tqdm import tqdm
 
 GITHUB_API_URL = "https://api.github.com/repos/projectdiscovery/{binary}/releases/latest"
-
-# Configuration file in the same directory as the script
-CONFIG_FILE = Path(__file__).parent / "config.ini"  
 
 def get_amd64_zip_url(release_info):
     """Extracts the download URL for the amd64 zip asset from the release info."""
@@ -44,30 +40,44 @@ def run_command(command):
         print(f"Output: {err.stderr}")
         sys.exit(1)
 
-def create_config():
-    """Creates a config file if it doesn't exist."""
-    if not CONFIG_FILE.exists():
-        print(f"Creating config file at: {CONFIG_FILE}")
-        config = configparser.ConfigParser()
-        config['discord'] = {
-            'username': input("Enter your Discord username: "),
-            'webhook_url': input("Enter your Discord webhook URL: ")
-        }
-        with open(CONFIG_FILE, 'w') as configfile:
-            config.write(configfile)
+def create_notify_config():
+    """Creates a notify configuration file."""
+    config_dir = Path.home() / ".config" / "notify"
+    config_path = config_dir / "provider-config.yaml"
 
-def send_notification(data):
-    """Sends a notification using notify."""
+    if not config_path.exists():
+        config_dir.mkdir(parents=True, exist_ok=True)
+        username = input("Enter the Discord username: ")
+        webhook_url = input("Enter the Discord webhook URL: ")
+
+        config_content = f"""
+discord:
+  - id: "crawl"
+    discord_channel: "notify"
+    discord_username: "{username}"
+    discord_format: "{{{{data}}}}"
+    discord_webhook_url: "{webhook_url}"
+"""
+        config_path.write_text(config_content)
+    return config_path
+
+
+def send_notification(data, title):  # Add title parameter
+    """Sends a notification using notify with a title."""
     try:
+        config_path = create_notify_config()
         notification_data_file = Path("notification_data.txt")
-        notification_data_file.write_text(data)
 
-        # Use the YAML config file (notify_config.yaml)
+        # Add title to the notification data
+        notification_data = f"### {title}\n{data}"  
+        notification_data_file.write_text(notification_data)
+
         notify_command = [
             "./notify", "-silent", "-data", str(notification_data_file), 
-            "-bulk", "-config", "notify_config.yaml" 
+            "-bulk", "-config", str(config_path)
         ]
         run_command(notify_command)
+
     except Exception as err:
         print(f"Error sending notification: {err}")
 
@@ -130,13 +140,13 @@ def main():
     subfinder_output_file = output_dir / f"{domain}_subfinder.txt"
     run_command(["./subfinder", "-silent", "-all", "-d", domain, "-o", str(subfinder_output_file)])
     if not args.no_notify:
-        send_notification(subfinder_output_file.read_text())
+        send_notification(subfinder_output_file.read_text(), "Subfinder")  # Add title
 
     # Use Httpx to find live subdomains
     httpx_output_file = output_dir / f"{domain}_httpx.txt"
     run_command(["./httpx", "-silent", "-l", str(subfinder_output_file), "-o", str(httpx_output_file)])
     if not args.no_notify:
-        send_notification(httpx_output_file.read_text())
+        send_notification(httpx_output_file.read_text(), "Httpx")  # Add title
 
     # Use Nuclei to scan the live subdomains
     nuclei_output_file = output_dir / f"{domain}_nuclei.txt"
@@ -145,7 +155,7 @@ def main():
         "-severity", "critical,high,medium,low,info", "-v", "-me", str(nuclei_output_file)
     ])
     if not args.no_notify:
-        send_notification(nuclei_output_file.read_text())
+        send_notification(nuclei_output_file.read_text(), "Nuclei")  # Add title
 
     print("Scan completed successfully!")
 
