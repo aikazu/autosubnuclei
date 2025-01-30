@@ -17,7 +17,7 @@ This script is an automated security scanner that performs subdomain enumeration
 
 - Python 3.6 or higher
 - Internet connection for downloading tools and scanning
-- `requests` and `tqdm` Python packages: `pip install requests tqdm`
+- `requests` and `tqdm` Python packages: `pip install -r requirements.txt`
 
 ## Installation
 
