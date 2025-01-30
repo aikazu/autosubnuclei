@@ -38,8 +38,8 @@ This script provides an enterprise-grade security scanning workflow that perform
 
 ```bash
 # Clone repository
-git clone https://github.com/yourrepo/security-scanner.git
-cd security-scanner
+git clone https://github.com/aikazu/autosubnuclei.git
+cd autosubnuclei
 
 # Install dependencies
 pip install -r requirements.txt
@@ -49,12 +49,12 @@ pip install -r requirements.txt
 
 ### Basic Scan
 ```bash
-./scanner.py example.com
+./autosubnuclei.py example.com
 ```
 
 ### Advanced Options
 ```bash
-./scanner.py example.com \
+./autosubnuclei.py example.com \
   --output /path/to/results \
   --templates ~/custom-templates \
   --severities "critical,high" \
@@ -131,11 +131,6 @@ output-directory/
 | Notification failures            | Confirm webhook URL validity, env vars    |
 | Permission denied                | Run `chmod 600 ~/.config/notify/*`        |
 | Scan timeout                     | Increase timeout in `run_command()`       |
-
-## Performance
-- Typical memory usage: 200-500MB
-- Average execution time: 30-90 minutes
-- Recommended hardware: 2 vCPU, 4GB RAM
 
 ## License
 Apache 2.0 - See [LICENSE](LICENSE) for details
