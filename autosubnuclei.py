@@ -200,18 +200,26 @@ def main():
         send_notification(httpx_output.read_text(), "Httpx Results", bin_paths["notify"])
 
     # Nuclei execution
-    nuclei_output = args.output / f"{args.domain}_nuclei.txt"
+    nuclei_output_dir = args.output / f"{args.domain}_nuclei"
+    nuclei_output_dir.mkdir(parents=True, exist_ok=True)
+    
     print("Running nuclei...")
     run_command([
         bin_paths["nuclei"],
         "-l", str(httpx_output),
         "-t", str(templates_path),
         "-severity", args.severities,
-        "-me", str(nuclei_output)
+        "-me", str(nuclei_output_dir)
     ])
-    validate_file(nuclei_output, "Nuclei")
-    if not args.no_notify:
-        send_notification(nuclei_output.read_text(), "Nuclei Results", bin_paths["notify"])
+    
+    # Validate and process results
+    md_files = list(nuclei_output_dir.glob("*.md"))
+    if not md_files:
+        print("No nuclei findings detected")
+    else:
+        combined_results = "\n".join([f.read_text() for f in md_files])
+        if not args.no_notify:
+            send_notification(combined_results, "Nuclei Results", bin_paths["notify"])
 
     print("Scan completed successfully")
 
