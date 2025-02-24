@@ -78,7 +78,7 @@ def create_notify_config():
     config_path.chmod(0o600)  # Restrict permissions
     return config_path
 
-def send_notification(data, title):
+def send_notification(data, title, notify_path):
     """Sends a notification using notify with proper data handling."""
     try:
         # Truncate data to Discord's limits
@@ -93,7 +93,7 @@ def send_notification(data, title):
             temp_file_path = temp_file.name
 
         notify_command = [
-            "notify", "-silent", "-data", temp_file_path, 
+            notify_path, "-silent", "-data", temp_file_path, 
             "-bulk", "-config", str(config_path)
         ]
         run_command(notify_command)
@@ -189,7 +189,7 @@ def main():
     run_command([bin_paths["subfinder"], "-silent", "-d", args.domain, "-o", str(sub_output)])
     validate_file(sub_output, "Subfinder")
     if not args.no_notify:
-        send_notification(sub_output.read_text(), "Subfinder Results")
+        send_notification(sub_output.read_text(), "Subfinder Results", bin_paths["notify"])
 
     # Httpx execution
     httpx_output = args.output / f"{args.domain}_httpx.txt"
@@ -197,7 +197,7 @@ def main():
     run_command([bin_paths["httpx"], "-silent", "-l", str(sub_output), "-o", str(httpx_output)])
     validate_file(httpx_output, "Httpx")
     if not args.no_notify:
-        send_notification(httpx_output.read_text(), "Httpx Results")
+        send_notification(httpx_output.read_text(), "Httpx Results", bin_paths["notify"])
 
     # Nuclei execution
     nuclei_output = args.output / f"{args.domain}_nuclei.txt"
@@ -211,7 +211,7 @@ def main():
     ])
     validate_file(nuclei_output, "Nuclei")
     if not args.no_notify:
-        send_notification(nuclei_output.read_text(), "Nuclei Results")
+        send_notification(nuclei_output.read_text(), "Nuclei Results", bin_paths["notify"])
 
     print("Scan completed successfully")
 
