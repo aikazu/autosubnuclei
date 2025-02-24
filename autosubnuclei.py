@@ -212,14 +212,13 @@ def main():
         "-me", str(nuclei_output_dir)
     ])
     
-    # Validate and process results
-    md_files = list(nuclei_output_dir.glob("*.md"))
-    if not md_files:
-        print("No nuclei findings detected")
-    else:
-        combined_results = "\n".join([f.read_text() for f in md_files])
-        if not args.no_notify:
-            send_notification(combined_results, "Nuclei Results", bin_paths["notify"])
+    # Look for index.md specifically
+    index_md = nuclei_output_dir / "index.md"
+    if not index_md.exists():
+        sys.exit("Nuclei index.md not found in output directory")
+    
+    if not args.no_notify:
+        send_notification(index_md.read_text(), "Nuclei Results", bin_paths["notify"])
 
     print("Scan completed successfully")
 
