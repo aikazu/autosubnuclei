@@ -81,11 +81,20 @@ def create_notify_config():
 def send_notification(data, title, notify_path):
     """Sends a notification using notify with proper data handling."""
     try:
-        # Truncate data to Discord's limits
-        if len(data) > DISCORD_MESSAGE_LIMIT:
-            data = data[:DISCORD_MESSAGE_LIMIT - 100] + "\n... (truncated)"
+        # Convert markdown table to simple list format for Discord
+        formatted_data = "\n".join([
+            f"• {line.split('|')[2].strip()} ({line.split('|')[3].strip()})"
+            for line in data.split('\n')[2:]  # Skip header lines
+            if line.strip() and '---' not in line
+        ])
+
+        # Truncate to Discord's limits while keeping it readable
+        if len(formatted_data) > DISCORD_MESSAGE_LIMIT - 100:
+            formatted_data = formatted_data[:DISCORD_MESSAGE_LIMIT - 150] + "\n... (truncated)"
         
-        notification_data = f"### {title}\n{data}"
+        notification_data = f"## {title}\n{formatted_data}"
+        
+        # Rest of the notification code remains the same
         config_path = create_notify_config()
 
         with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_file:
@@ -98,7 +107,7 @@ def send_notification(data, title, notify_path):
         ]
         run_command(notify_command)
         
-        os.unlink(temp_file_path)  # Clean up temp file
+        os.unlink(temp_file_path)
 
     except Exception as err:
         print(f"Notification error: {err}")
