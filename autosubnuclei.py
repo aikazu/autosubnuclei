@@ -78,27 +78,39 @@ def create_notify_config():
     config_path.chmod(0o600)  # Restrict permissions
     return config_path
 
-def send_notification(data, title, notify_path):
-    """Sends a notification using notify with proper data handling."""
+def send_notification(data, title, notify_path, data_type='text'):
+    """Sends notifications with format handling per data type."""
     try:
-        # Convert markdown table to simple list format for Discord
-        formatted_data = "\n".join([
-            f"• {line.split('|')[2].strip()} ({line.split('|')[3].strip()})"
-            for line in data.split('\n')[2:]  # Skip header lines
-            if line.strip() and '---' not in line
-        ])
+        # Process data based on type
+        if data_type == 'markdown':
+            # Nuclei-specific markdown table processing
+            formatted_lines = []
+            for line in data.split('\n'):
+                if '| --- |' in line or not line.strip():
+                    continue
+                parts = [p.strip() for p in line.split('|') if p.strip()]
+                if len(parts) >= 4:
+                    finding = parts[1]
+                    severity = parts[2]
+                    formatted_lines.append(f"• {finding} ({severity})")
+            
+            formatted_data = "\n".join(formatted_lines) if formatted_lines else "No significant findings"
+        else:
+            # Plain text processing for subfinder/httpx
+            formatted_data = data.strip()
 
-        # Truncate to Discord's limits while keeping it readable
-        if len(formatted_data) > DISCORD_MESSAGE_LIMIT - 100:
-            formatted_data = formatted_data[:DISCORD_MESSAGE_LIMIT - 150] + "\n... (truncated)"
+        # Truncation logic
+        max_length = DISCORD_MESSAGE_LIMIT - len(title) - 100
+        if len(formatted_data) > max_length:
+            formatted_data = formatted_data[:max_length] + "\n... (truncated)"
         
-        notification_data = f"## {title}\n{formatted_data}"
-        
-        # Rest of the notification code remains the same
+        notification_content = f"## {title}\n{formatted_data}"
+
+        # Rest of notification code remains the same
         config_path = create_notify_config()
 
         with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_file:
-            temp_file.write(notification_data)
+            temp_file.write(notification_content)
             temp_file_path = temp_file.name
 
         notify_command = [
@@ -172,7 +184,7 @@ def main():
                       help="Disable notifications")
     parser.add_argument("--force", action="store_true",
                       help="Force re-download of binaries")
-    parser.add_argument("--severities", default="critical,high,medium,low,info",
+    parser.add_argument("--severities", default="critical,high,medium,low",
                       help="Comma-separated Nuclei severity levels")
     args = parser.parse_args()
 
@@ -227,7 +239,7 @@ def main():
         sys.exit("Nuclei index.md not found in output directory")
     
     if not args.no_notify:
-        send_notification(index_md.read_text(), "Nuclei Results", bin_paths["notify"])
+        send_notification(index_md.read_text(), "Nuclei Results", bin_paths["notify"], data_type='markdown')
 
     print("Scan completed successfully")
 
