@@ -232,7 +232,7 @@ def main():
         "-l", str(httpx_output),
         "-t", str(templates_path),
         "-severity", args.severities,
-        "-tags", "dast,cve,misconfig,oast,xss",  # Web vulnerability tags
+        "-tags", "dast,cve,misconfig,oast,xss,tech",  # Web vulnerability tags
         "-me", str(nuclei_output_dir)
     ])
     
