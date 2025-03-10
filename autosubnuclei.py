@@ -193,7 +193,7 @@ def main():
                       help="Disable notifications")
     parser.add_argument("--force", action="store_true",
                       help="Force re-download of binaries")
-    parser.add_argument("--severities", default="critical,high,medium,low,info",
+    parser.add_argument("--severities", default="critical,high,medium,low",
                       help="Comma-separated Nuclei severity levels")
     args = parser.parse_args()
 
@@ -239,7 +239,7 @@ def main():
         "-l", str(httpx_output),
         "-t", str(templates_path),
         "-severity", args.severities,
-        "-tags", "dast,cve,misconfig,oast,xss,tech",  # Web vulnerability tags
+        "-tags", "dast,cve,misconfig,oast,xss",  # Web vulnerability tags
         "-me", str(nuclei_output_dir)
     ])
     
