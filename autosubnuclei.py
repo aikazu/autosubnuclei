@@ -226,7 +226,7 @@ def main():
     nuclei_output_dir = domain_output_dir / "nuclei"
     nuclei_output_dir.mkdir(parents=True, exist_ok=True)
     
-    print("Running nuclei with web vulnerability focus...")
+    print("Running nuclei...")
     run_command([
         bin_paths["nuclei"],
         "-l", str(httpx_output),
