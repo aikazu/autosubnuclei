@@ -51,7 +51,77 @@ def run_command(command, timeout=1800):
     except subprocess.TimeoutExpired:
         sys.exit(f"Command timed out: {' '.join(command)}")
 
-# ... (keep the create_notify_config and send_notification functions unchanged) ...
+def create_notify_config():
+    """Creates a notify configuration file with environment variable support."""
+    config_dir = Path.home() / ".config" / "notify"
+    config_path = config_dir / "provider-config.yaml"
+
+    if config_path.exists():
+        return config_path
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Check environment variables first
+    username = os.environ.get("DISCORD_USERNAME")
+    webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
+    
+    if not (username and webhook_url):
+        if not sys.stdin.isatty():
+            sys.exit("Discord credentials not found in env and not running interactively")
+        username = input("Enter Discord username: ")
+        webhook_url = input("Enter Discord webhook URL: ")
+
+    config_content = f"""discord:
+  - id: "crawl"
+    discord_channel: "notify"
+    discord_username: "{username}"
+    discord_format: "{{{{data}}}}"
+    discord_webhook_url: "{webhook_url}"
+"""
+    config_path.write_text(config_content)
+    config_path.chmod(0o600)  # Restrict permissions
+    return config_path
+
+def send_notification(data, title, notify_path, data_type='text'):
+    """Sends notifications with format handling per data type."""
+    try:
+        if data_type == 'markdown':
+            formatted_lines = []
+            for line in data.split('\n'):
+                if '| --- |' in line or not line.strip():
+                    continue
+                parts = [p.strip() for p in line.split('|') if p.strip()]
+                if len(parts) >= 4:
+                    finding = parts[1]
+                    severity = parts[2]
+                    formatted_lines.append(f"• {finding} ({severity})")
+            
+            formatted_data = "\n".join(formatted_lines) if formatted_lines else "No significant findings"
+        else:
+            formatted_data = data.strip()
+
+        max_length = DISCORD_MESSAGE_LIMIT - len(title) - 100
+        if len(formatted_data) > max_length:
+            formatted_data = formatted_data[:max_length] + "\n... (truncated)"
+        
+        notification_content = f"## {title}\n{formatted_data}"
+
+        config_path = create_notify_config()
+
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_file:
+            temp_file.write(notification_content)
+            temp_file_path = temp_file.name
+
+        notify_command = [
+            notify_path, "-silent", "-data", temp_file_path, 
+            "-bulk", "-config", str(config_path)
+        ]
+        run_command(notify_command)
+        
+        os.unlink(temp_file_path)
+
+    except Exception as err:
+        print(f"Notification error: {err}")
 
 def download_and_extract(url, binary_name):
     """Downloads and extracts a binary to the script's bin directory."""
