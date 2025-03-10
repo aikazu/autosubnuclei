@@ -87,14 +87,21 @@ def send_notification(data, title, notify_path, data_type='text'):
     try:
         if data_type == 'markdown':
             formatted_lines = []
+            in_table = False
             for line in data.split('\n'):
-                if '| --- |' in line or not line.strip():
+                # Detect table start
+                if '|' in line and '---' in line:
+                    in_table = True
                     continue
+                if not in_table or not line.strip():
+                    continue
+
                 parts = [p.strip() for p in line.split('|') if p.strip()]
-                if len(parts) >= 4:
-                    finding = parts[1]
-                    severity = parts[2]
-                    formatted_lines.append(f"• {finding} ({severity})")
+                # Expected columns: [Protocol, Finding, Severity, Template]
+                if len(parts) >= 3:
+                    finding = parts[2]
+                    severity = parts[3]
+                    formatted_lines.append(f"• {severity.upper()}: {finding}")
             
             formatted_data = "\n".join(formatted_lines) if formatted_lines else "No significant findings"
         else:
