@@ -14,6 +14,10 @@ from tqdm import tqdm
 GITHUB_API_URL = "https://api.github.com/repos/projectdiscovery/{binary}/releases/latest"
 DISCORD_MESSAGE_LIMIT = 2000  # Discord's message character limit
 
+# Get script directory for binary storage
+SCRIPT_DIR = Path(__file__).parent.resolve()
+BIN_DIR = SCRIPT_DIR / "bin"
+
 def get_amd64_zip_url(release_info):
     """Extracts the download URL for the amd64 zip asset from the release info."""
     for asset in release_info.get("assets", []):
@@ -47,86 +51,13 @@ def run_command(command, timeout=1800):
     except subprocess.TimeoutExpired:
         sys.exit(f"Command timed out: {' '.join(command)}")
 
-def create_notify_config():
-    """Creates a notify configuration file with environment variable support."""
-    config_dir = Path.home() / ".config" / "notify"
-    config_path = config_dir / "provider-config.yaml"
+# ... (keep the create_notify_config and send_notification functions unchanged) ...
 
-    if config_path.exists():
-        return config_path
-
-    config_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Check environment variables first
-    username = os.environ.get("DISCORD_USERNAME")
-    webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
-    
-    if not (username and webhook_url):
-        if not sys.stdin.isatty():
-            sys.exit("Discord credentials not found in env and not running interactively")
-        username = input("Enter Discord username: ")
-        webhook_url = input("Enter Discord webhook URL: ")
-
-    config_content = f"""discord:
-  - id: "crawl"
-    discord_channel: "notify"
-    discord_username: "{username}"
-    discord_format: "{{{{data}}}}"
-    discord_webhook_url: "{webhook_url}"
-"""
-    config_path.write_text(config_content)
-    config_path.chmod(0o600)  # Restrict permissions
-    return config_path
-
-def send_notification(data, title, notify_path, data_type='text'):
-    """Sends notifications with format handling per data type."""
+def download_and_extract(url, binary_name):
+    """Downloads and extracts a binary to the script's bin directory."""
     try:
-        # Process data based on type
-        if data_type == 'markdown':
-            # Nuclei-specific markdown table processing
-            formatted_lines = []
-            for line in data.split('\n'):
-                if '| --- |' in line or not line.strip():
-                    continue
-                parts = [p.strip() for p in line.split('|') if p.strip()]
-                if len(parts) >= 4:
-                    finding = parts[1]
-                    severity = parts[2]
-                    formatted_lines.append(f"• {finding} ({severity})")
-            
-            formatted_data = "\n".join(formatted_lines) if formatted_lines else "No significant findings"
-        else:
-            # Plain text processing for subfinder/httpx
-            formatted_data = data.strip()
-
-        # Truncation logic
-        max_length = DISCORD_MESSAGE_LIMIT - len(title) - 100
-        if len(formatted_data) > max_length:
-            formatted_data = formatted_data[:max_length] + "\n... (truncated)"
+        BIN_DIR.mkdir(parents=True, exist_ok=True)
         
-        notification_content = f"## {title}\n{formatted_data}"
-
-        # Rest of notification code remains the same
-        config_path = create_notify_config()
-
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_file:
-            temp_file.write(notification_content)
-            temp_file_path = temp_file.name
-
-        notify_command = [
-            notify_path, "-silent", "-data", temp_file_path, 
-            "-bulk", "-config", str(config_path)
-        ]
-        run_command(notify_command)
-        
-        os.unlink(temp_file_path)
-
-    except Exception as err:
-        print(f"Notification error: {err}")
-
-def download_and_extract(url, binary_name, output_dir):
-    """Downloads and extracts a binary with proper error handling."""
-    try:
         with requests.get(url, stream=True) as response:
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))
@@ -151,7 +82,7 @@ def download_and_extract(url, binary_name, output_dir):
                 for file in extracted_files:
                     if file.is_file() and file.name == binary_name:
                         file.chmod(0o755)
-                        shutil.move(str(file), str(output_dir / binary_name))
+                        shutil.move(str(file), str(BIN_DIR / binary_name))
                         return
                 
                 raise FileNotFoundError(f"Binary {binary_name} not found in archive")
@@ -159,12 +90,13 @@ def download_and_extract(url, binary_name, output_dir):
     except Exception as err:
         sys.exit(f"Failed processing {binary_name}: {err}")
 
-def download_binaries(binaries, output_dir, force=False):
+def download_binaries(binaries, force=False):
     """Downloads all required binaries with optional force update."""
     for binary, url in binaries.items():
-        if force or not (output_dir / binary).exists():
+        bin_path = BIN_DIR / binary
+        if force or not bin_path.exists():
             print(f"Downloading {binary}...")
-            download_and_extract(url, binary, output_dir)
+            download_and_extract(url, binary)
 
 def validate_file(file_path, step_name):
     """Validates if output file exists and has content."""
@@ -178,7 +110,7 @@ def main():
     parser.add_argument("domain", help="Target domain to scan")
     parser.add_argument("--templates", default="~/nuclei-templates/",
                       help="Path to nuclei templates")
-    parser.add_argument("--output", type=Path, default=Path.cwd(),
+    parser.add_argument("--output", type=Path, default=Path("output"),
                       help="Output directory for results")
     parser.add_argument("--no-notify", action="store_true",
                       help="Disable notifications")
@@ -188,8 +120,9 @@ def main():
                       help="Comma-separated Nuclei severity levels")
     args = parser.parse_args()
 
-    # Prepare environment
-    args.output.mkdir(parents=True, exist_ok=True)
+    # Prepare output directories
+    domain_output_dir = args.output / args.domain
+    domain_output_dir.mkdir(parents=True, exist_ok=True)
     templates_path = Path(args.templates).expanduser()
 
     # Get binary URLs and download
@@ -199,13 +132,13 @@ def main():
         "nuclei": get_latest_release_url("nuclei"),
         "notify": get_latest_release_url("notify")
     }
-    download_binaries(binaries, args.output, args.force)
+    download_binaries(binaries, args.force)
 
-    # Build absolute paths to binaries
-    bin_paths = {name: str(args.output / name) for name in binaries}
+    # Build paths to binaries
+    bin_paths = {name: str(BIN_DIR / name) for name in binaries}
 
     # Subfinder execution
-    sub_output = args.output / f"{args.domain}_subfinder.txt"
+    sub_output = domain_output_dir / "subfinder.txt"
     print("Running subfinder...")
     run_command([bin_paths["subfinder"], "-silent", "-d", args.domain, "-o", str(sub_output)])
     validate_file(sub_output, "Subfinder")
@@ -213,7 +146,7 @@ def main():
         send_notification(sub_output.read_text(), "Subfinder Results", bin_paths["notify"])
 
     # Httpx execution
-    httpx_output = args.output / f"{args.domain}_httpx.txt"
+    httpx_output = domain_output_dir / "httpx.txt"
     print("Running httpx...")
     run_command([bin_paths["httpx"], "-silent", "-l", str(sub_output), "-o", str(httpx_output)])
     validate_file(httpx_output, "Httpx")
@@ -221,7 +154,7 @@ def main():
         send_notification(httpx_output.read_text(), "Httpx Results", bin_paths["notify"])
 
     # Nuclei execution
-    nuclei_output_dir = args.output / f"{args.domain}_nuclei"
+    nuclei_output_dir = domain_output_dir / "nuclei"
     nuclei_output_dir.mkdir(parents=True, exist_ok=True)
     
     print("Running nuclei...")
@@ -241,7 +174,7 @@ def main():
     if not args.no_notify:
         send_notification(index_md.read_text(), "Nuclei Results", bin_paths["notify"], data_type='markdown')
 
-    print("Scan completed successfully")
+    print(f"Scan completed successfully. Results saved to: {domain_output_dir}")
 
 if __name__ == "__main__":
     main()
