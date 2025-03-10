@@ -233,7 +233,6 @@ def main():
         "-t", str(templates_path),
         "-severity", args.severities,
         "-tags", "dast,cve,misconfig,oast,xss",  # Web vulnerability tags
-        "-dast",
         "-me", str(nuclei_output_dir)
     ])
     
