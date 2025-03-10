@@ -186,7 +186,7 @@ def main():
                       help="Disable notifications")
     parser.add_argument("--force", action="store_true",
                       help="Force re-download of binaries")
-    parser.add_argument("--severities", default="critical,high,medium,low",
+    parser.add_argument("--severities", default="critical,high,medium,low,info",
                       help="Comma-separated Nuclei severity levels")
     args = parser.parse_args()
 
@@ -222,17 +222,17 @@ def main():
     validate_file(httpx_output, "Httpx")
     if not args.no_notify:
         send_notification(httpx_output.read_text(), "Httpx Results", bin_paths["notify"])
-
-    # Nuclei execution
+    # Nuclei execution with web vulnerability focus
     nuclei_output_dir = domain_output_dir / "nuclei"
     nuclei_output_dir.mkdir(parents=True, exist_ok=True)
     
-    print("Running nuclei...")
+    print("Running nuclei with web vulnerability focus...")
     run_command([
         bin_paths["nuclei"],
         "-l", str(httpx_output),
         "-t", str(templates_path),
         "-severity", args.severities,
+        "-tags", "dast,cve,misconfig,oast,xss",  # Web vulnerability tags
         "-me", str(nuclei_output_dir)
     ])
     
@@ -245,6 +245,6 @@ def main():
         send_notification(index_md.read_text(), "Nuclei Results", bin_paths["notify"], data_type='markdown')
 
     print(f"Scan completed successfully. Results saved to: {domain_output_dir}")
-
+    
 if __name__ == "__main__":
     main()
