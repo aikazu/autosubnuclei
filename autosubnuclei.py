@@ -78,7 +78,7 @@ def create_notify_config():
         return config_path
 
     config_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Check environment variables first
     username = os.environ.get("DISCORD_USERNAME")
     webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
@@ -127,7 +127,7 @@ def send_notification(data, title, notify_path, data_type='text'):
                     formatted_lines.append(f"• {severity.upper()}: {finding} ({hostname_ip})")
                 else:
                     print(f"Debug: Skipping line (unexpected format): {line}")  # Debugging: Log skipped lines
-            
+
             formatted_data = "\n".join(formatted_lines) if formatted_lines else "No significant findings"
         else:
             formatted_data = data.strip()
@@ -135,7 +135,7 @@ def send_notification(data, title, notify_path, data_type='text'):
         max_length = DISCORD_MESSAGE_LIMIT - len(title) - 100
         if len(formatted_data) > max_length:
             formatted_data = formatted_data[:max_length] + "\n... (truncated)"
-        
+
         notification_content = f"## {title}\n{formatted_data}"
 
         config_path = create_notify_config()
@@ -149,7 +149,7 @@ def send_notification(data, title, notify_path, data_type='text'):
             "-bulk", "-config", str(config_path)
         ]
         run_command(notify_command)
-        
+
         os.unlink(temp_file_path)
 
     except Exception as err:
@@ -159,11 +159,11 @@ def download_and_extract(url, binary_name):
     """Downloads and extracts a binary to the script's bin directory."""
     try:
         BIN_DIR.mkdir(parents=True, exist_ok=True)
-        
+
         with requests.get(url, stream=True) as response:
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))
-            
+
             with tempfile.TemporaryDirectory() as temp_dir:
                 zip_path = Path(temp_dir) / f"{binary_name}.zip"
                 with open(zip_path, 'wb') as f, tqdm(
@@ -178,7 +178,7 @@ def download_and_extract(url, binary_name):
 
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                     zip_ref.extractall(temp_dir)
-                
+
                 # Search for binary in extracted files
                 extracted_files = list(Path(temp_dir).rglob('*'))
                 binary_found = False
@@ -191,7 +191,7 @@ def download_and_extract(url, binary_name):
                         shutil.move(str(file), str(BIN_DIR / file.name))
                         binary_found = True
                         break
-                
+
                 if not binary_found:
                     raise FileNotFoundError(f"Binary {binary_name} (or {binary_name}.exe) not found in archive")
 
