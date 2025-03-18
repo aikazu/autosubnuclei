@@ -104,6 +104,7 @@ def send_notification(data, title, notify_path, data_type='text'):
     """Sends notifications with format handling per data type."""
     try:
         if data_type == 'markdown':
+            print("Debug: Nuclei output data:\n", data)  # Debugging: Print the raw data
             formatted_lines = []
             in_table = False
             for line in data.split('\n'):
@@ -115,11 +116,17 @@ def send_notification(data, title, notify_path, data_type='text'):
                     continue
 
                 parts = [p.strip() for p in line.split('|') if p.strip()]
-                # Expected columns: [Protocol, Finding, Severity, Template]
-                if len(parts) >= 3:
-                    finding = parts[2]
-                    severity = parts[3]
-                    formatted_lines.append(f"• {severity.upper()}: {finding}")
+                # Expected columns: [Hostname/IP, Finding, Severity]
+                if len(parts) >= 3:  # Ensure there are at least 3 columns
+                    hostname_ip = parts[0]
+                    finding = parts[1]
+                    severity = parts[2]
+                    # Extract the actual finding text from the markdown link (if present)
+                    if '](' in finding:  # Check if it's a markdown link
+                        finding = finding.split('](')[0].replace('[', '').strip()
+                    formatted_lines.append(f"• {severity.upper()}: {finding} ({hostname_ip})")
+                else:
+                    print(f"Debug: Skipping line (unexpected format): {line}")  # Debugging: Log skipped lines
             
             formatted_data = "\n".join(formatted_lines) if formatted_lines else "No significant findings"
         else:
