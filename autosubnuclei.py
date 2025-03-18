@@ -8,6 +8,7 @@ import zipfile
 import tempfile
 import subprocess
 import argparse
+import platform
 from pathlib import Path
 from tqdm import tqdm
 
@@ -18,20 +19,37 @@ DISCORD_MESSAGE_LIMIT = 2000  # Discord's message character limit
 SCRIPT_DIR = Path(__file__).parent.resolve()
 BIN_DIR = SCRIPT_DIR / "bin"
 
-def get_amd64_zip_url(release_info):
-    """Extracts the download URL for the amd64 zip asset from the release info."""
+def get_os():
+    """Returns the operating system name."""
+    return platform.system().lower()
+
+def get_architecture():
+    """Returns the system architecture."""
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        return "amd64"
+    elif machine in ("arm64", "aarch64"):
+        return "arm64"
+    else:
+        sys.exit(f"Unsupported architecture: {machine}")
+
+def get_zip_url(release_info):
+    """Extracts the download URL for the appropriate zip asset from the release info."""
+    os_name = get_os()
+    arch = get_architecture()
+    
     for asset in release_info.get("assets", []):
         asset_name = asset["name"].lower()
-        if "amd64" in asset_name and asset_name.endswith(".zip"):
+        if os_name in asset_name and arch in asset_name and asset_name.endswith(".zip"):
             return asset["browser_download_url"]
-    raise ValueError(f"No amd64 zip asset found in release {release_info['tag_name']}")
+    raise ValueError(f"No {os_name} {arch} zip asset found in release {release_info['tag_name']}")
 
 def get_latest_release_url(binary):
     """Fetches the latest release info for a given binary from GitHub."""
     try:
         response = requests.get(GITHUB_API_URL.format(binary=binary))
         response.raise_for_status()
-        return get_amd64_zip_url(response.json())
+        return get_zip_url(response.json())
     except requests.exceptions.RequestException as err:
         sys.exit(f"Error fetching release info for {binary}: {err}")
 
@@ -156,13 +174,19 @@ def download_and_extract(url, binary_name):
                 
                 # Search for binary in extracted files
                 extracted_files = list(Path(temp_dir).rglob('*'))
+                binary_found = False
                 for file in extracted_files:
-                    if file.is_file() and file.name == binary_name:
+                    # Handle Windows binaries (e.g., subfinder.exe)
+                    if file.is_file() and (file.name == binary_name or file.name == f"{binary_name}.exe"):
+                        # Ensure the binary is executable
                         file.chmod(0o755)
-                        shutil.move(str(file), str(BIN_DIR / binary_name))
-                        return
+                        # Move the binary to the bin directory
+                        shutil.move(str(file), str(BIN_DIR / file.name))
+                        binary_found = True
+                        break
                 
-                raise FileNotFoundError(f"Binary {binary_name} not found in archive")
+                if not binary_found:
+                    raise FileNotFoundError(f"Binary {binary_name} (or {binary_name}.exe) not found in archive")
 
     except Exception as err:
         sys.exit(f"Failed processing {binary_name}: {err}")
@@ -232,7 +256,7 @@ def main():
     # Nuclei execution with web vulnerability focus
     nuclei_output_dir = domain_output_dir / "nuclei"
     nuclei_output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     print("Running nuclei...")
     run_command([
         bin_paths["nuclei"],
@@ -242,16 +266,16 @@ def main():
         "-tags", "dast,cve,misconfig,oast,xss",  # Web vulnerability tags
         "-me", str(nuclei_output_dir)
     ])
-    
+
     # Look for index.md specifically
     index_md = nuclei_output_dir / "index.md"
     if not index_md.exists():
         sys.exit("Nuclei index.md not found in output directory")
-    
+
     if not args.no_notify:
         send_notification(index_md.read_text(), "Nuclei Results", bin_paths["notify"], data_type='markdown')
 
     print(f"Scan completed successfully. Results saved to: {domain_output_dir}")
-    
+
 if __name__ == "__main__":
     main()
