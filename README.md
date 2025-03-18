@@ -1,150 +1,164 @@
-# Automated Security Scanning Pipeline
+Here’s a comprehensive `README.md` file for your GitHub repository. This file provides an overview of the project, instructions for setup and usage, and details about contributing and licensing.
 
-This script provides an enterprise-grade security scanning workflow that performs subdomain enumeration, live host detection, and vulnerability assessment. Built around ProjectDiscovery tools, it features automatic tool management, secure configuration handling, and flexible notification integration.
+---
+
+# AutoSubNuclei: Automated Security Scanning Pipeline
+
+AutoSubNuclei is a Python-based automation tool for performing security scans using popular tools like **Subfinder**, **Httpx**, and **Nuclei**. It automates the process of subdomain enumeration, HTTP probing, and vulnerability scanning, and sends notifications via Discord for easy monitoring.
+
+---
 
 ## Features
 
-- **Automated Tool Management**
-  - Self-contained binary downloads/updates
-  - Force refresh capability with `--force` flag
-  - Architecture-specific (amd64) package handling
+- **Subdomain Enumeration**: Uses [Subfinder](https://github.com/projectdiscovery/subfinder) to discover subdomains.
+- **HTTP Probing**: Uses [Httpx](https://github.com/projectdiscovery/httpx) to probe live HTTP servers.
+- **Vulnerability Scanning**: Uses [Nuclei](https://github.com/projectdiscovery/nuclei) to scan for vulnerabilities.
+- **Discord Notifications**: Sends scan results to a Discord channel using [Notify](https://github.com/projectdiscovery/notify).
+- **Cross-Platform**: Works on both Linux and Windows.
+- **Automatic Binary Management**: Downloads and updates required binaries automatically.
 
-- **Comprehensive Scanning**
-  - Subdomain discovery with Subfinder
-  - Live host verification with httpx
-  - Customizable vulnerability scanning with Nuclei
-  - Configurable severity levels (critical, high, medium, low, info)
-
-- **Secure Notifications**
-  - Discord integration with environment variable support
-  - Encrypted credential storage (600 permissions)
-  - Message truncation for Discord limits (2000 chars)
-  - Temporary file cleanup after notifications
-
-- **Enterprise-Grade Operations**
-  - Atomic file operations with temp directories
-  - Process timeouts (30 minutes per stage)
-  - Output validation at each step
-  - Cross-platform path handling
-  - Progress tracking with tqdm
+---
 
 ## Prerequisites
 
-- Python 3.7+
-- 500MB disk space (for tools and results)
-- `requests` and `tqdm` packages
+- Python 3.7 or higher
+- Discord webhook URL (for notifications)
+- Nuclei templates (optional, but recommended)
+
+---
 
 ## Installation
 
-```bash
-# Clone repository
-git clone https://github.com/aikazu/autosubnuclei.git
-cd autosubnuclei
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/autosubnuclei.git
+   cd autosubnuclei
+   ```
 
-# Install dependencies
-pip install -r requirements.txt
-```
+2. Set up a virtual environment (optional but recommended):
+   ```bash
+   python -m venv myenv
+   source myenv/bin/activate  # On Windows: myenv\Scripts\activate
+   ```
+
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Set up your Discord webhook:
+   - Create a Discord webhook in your server.
+   - Set the `DISCORD_WEBHOOK_URL` environment variable:
+     ```bash
+     export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/your-webhook-url"
+     ```
+     On Windows:
+     ```cmd
+     set DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/your-webhook-url"
+     ```
+
+---
 
 ## Usage
 
-### Basic Scan
+Run the script with the target domain as an argument:
 ```bash
-./autosubnuclei.py example.com
+python autosubnuclei.py example.com
 ```
 
-### Advanced Options
+### Command-Line Options
+
+| Option          | Description                                                                 |
+|-----------------|-----------------------------------------------------------------------------|
+| `--templates`   | Path to Nuclei templates (default: `~/nuclei-templates/`).                  |
+| `--output`      | Output directory for scan results (default: `output/`).                     |
+| `--no-notify`   | Disable Discord notifications.                                              |
+| `--force`       | Force re-download of binaries.                                              |
+| `--severities`  | Comma-separated list of Nuclei severities to scan (default: `critical,high,medium,low`). |
+
+### Example
+
 ```bash
-./autosubnuclei.py example.com \
-  --output /path/to/results \
-  --templates ~/custom-templates \
-  --severities "critical,high" \
-  --force \
-  --no-notify
+python autosubnuclei.py example.com --templates ~/custom-nuclei-templates --severities critical,high
 ```
 
-### Command Line Arguments
-| Argument        | Description                                  | Default                      |
-|-----------------|----------------------------------------------|------------------------------|
-| domain          | Target domain to scan                        | Required                     |
-| --templates     | Nuclei templates path                        | ~/nuclei-templates/          |
-| --output        | Output directory                             | Current directory            |
-| --no-notify     | Disable Discord notifications                | False                        |
-| --force         | Force re-download tools                      | False                        |
-| --severities    | Comma-separated Nuclei severity levels       | critical,high,medium,low,info|
+---
 
-## Configuration
+## Output
 
-### Discord Integration
-Configure via either method:
+The script generates the following files in the output directory (`output/<domain>/`):
 
-1. **Environment Variables** (recommended):
-```bash
-export DISCORD_USERNAME="SecurityBot"
-export DISCORD_WEBHOOK_URL="your_webhook_url"
+- `subfinder.txt`: List of discovered subdomains.
+- `httpx.txt`: List of live HTTP servers.
+- `nuclei/`: Directory containing Nuclei scan results, including `index.md`.
+
+---
+
+## Notifications
+
+Scan results are sent to Discord in the following format:
+
+### Subfinder Results
+```
+## Subfinder Results
+• example.com
+• sub.example.com
 ```
 
-2. **Interactive Setup** (first run):
-```bash
-Enter Discord username: SecurityBot
-Enter Discord webhook URL: your_webhook_url
+### Httpx Results
+```
+## Httpx Results
+• http://example.com
+• http://sub.example.com
 ```
 
-Configuration file: `~/.config/notify/provider-config.yaml` (600 permissions)
-
-## Output Structure
-```text
-output-directory/
-├── example.com_subfinder.txt
-├── example.com_httpx.txt
-├── example.com_nuclei.txt
-├── subfinder
-├── httpx
-├── nuclei
-└── notify
+### Nuclei Results
+```
+## Nuclei Results
+• MEDIUM: laravel-debug-enabled (sso.example.com)
+• HIGH: SQL Injection (api.example.com)
 ```
 
-## Security Best Practices
+---
 
-1. **Credential Protection**
-   - Store webhook URLs in environment variables
-   - Never commit configuration files
-   - Use dedicated Discord channels for notifications
+## Contributing
 
-2. **Scanning Ethics**
-   - Obtain explicit target authorization
-   - Limit scan intensity with `--severities`
-   - Schedule scans during maintenance windows
+Contributions are welcome! Here’s how you can help:
 
-3. **System Hardening**
-   - Run in isolated containers/VMs
-   - Restrict output directory permissions
-   - Monitor disk usage for large scans
+1. Fork the repository.
+2. Create a new branch for your feature or bugfix:
+   ```bash
+   git checkout -b feature-name
+   ```
+3. Commit your changes:
+   ```bash
+   git commit -m "Add new feature"
+   ```
+4. Push to the branch:
+   ```bash
+   git push origin feature-name
+   ```
+5. Open a pull request.
 
-## Troubleshooting
-
-### Common Issues
-
-| Symptom                          | Solution                                  |
-|----------------------------------|-------------------------------------------|
-| Binary download failures         | Check network ACLs, use `--force`         |
-| Empty output files               | Verify DNS resolution, target accessibility |
-| Notification failures            | Confirm webhook URL validity, env vars    |
-| Permission denied                | Run `chmod 600 ~/.config/notify/*`        |
-| Scan timeout                     | Increase timeout in `run_command()`       |
+---
 
 ## License
-Apache 2.0 - See [LICENSE](LICENSE) for details
+
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
 ---
 
-**Ethical Notice:** This tool must only be used for authorized security assessments. Unauthorized scanning is strictly prohibited.
+## Acknowledgments
+
+- [ProjectDiscovery](https://github.com/projectdiscovery) for creating Subfinder, Httpx, Nuclei, and Notify.
+- The open-source community for their contributions and support.
 
 ---
 
-### Key Fixes:
-1. Ensured all code blocks are properly closed with triple backticks.
-2. Added proper spacing between sections to avoid markdown breaking.
-3. Used consistent formatting for code blocks and tables.
-4. Verified the markdown renders correctly in preview mode.
+## Support
 
-Let me know if you need further adjustments!
+If you encounter any issues or have questions, feel free to open an issue on GitHub or reach out to the maintainers.
+
+---
+
+Enjoy using AutoSubNuclei! 🚀
