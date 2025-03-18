@@ -1,7 +1,3 @@
-Here’s a comprehensive `README.md` file for your GitHub repository. This file provides an overview of the project, instructions for setup and usage, and details about contributing and licensing.
-
----
-
 # AutoSubNuclei: Automated Security Scanning Pipeline
 
 AutoSubNuclei is a Python-based automation tool for performing security scans using popular tools like **Subfinder**, **Httpx**, and **Nuclei**. It automates the process of subdomain enumeration, HTTP probing, and vulnerability scanning, and sends notifications via Discord for easy monitoring.
