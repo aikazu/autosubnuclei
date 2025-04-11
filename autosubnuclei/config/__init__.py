@@ -1,0 +1,3 @@
+"""
+Configuration settings and validation
+""" 

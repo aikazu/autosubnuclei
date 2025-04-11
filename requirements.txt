@@ -1,2 +1,7 @@
 requests
 tqdm
+urllib3
+argparse
+logging
+pathlib
+typing

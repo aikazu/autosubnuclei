@@ -1,6 +1,3 @@
 venv/
-httpx
-subfinder
-nuclei
-notify
-*.txt
+tools/
+output/
