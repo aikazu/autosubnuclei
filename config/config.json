@@ -1,0 +1,12 @@
+{
+    "discord_webhook": "https://discord.com/api/webhooks/1243447711529959477/6z25kEHJyjzoK2oBbdKySWDk1fIKY5dD_Lh0-veAJdsOLOberHuqnNTvu2CQ5zBTiMGN",
+    "notifications_enabled": true,
+    "default_severities": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+    ],
+    "default_output_dir": "results",
+    "log_file": "autosubnuclei.log"
+}

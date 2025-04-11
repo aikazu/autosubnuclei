@@ -5,40 +5,97 @@ Tool manager for downloading and extracting required security tools
 import os
 import shutil
 import sys
-import zipfile
-import requests
-import logging
-import platform
 import stat
 import subprocess
+import logging
 from pathlib import Path
-from typing import Optional, Dict, List
-from tqdm import tqdm
+from typing import Optional, Dict, List, Tuple
+
+from .helpers import (
+    get_platform_info,
+    create_requests_session,
+    download_file,
+    extract_zip,
+    validate_file
+)
 
 logger = logging.getLogger(__name__)
 
 class ToolManager:
     def __init__(self):
-        self.tools_dir = Path.home() / ".autosubnuclei" / "tools"
+        # Use tools directory in the workspace
+        self.tools_dir = Path(__file__).parent.parent.parent / "tools"
         self.tools_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Get system information
+        self.system, self.arch = get_platform_info()
+        
         self.required_tools = {
             "subfinder": {
-                "url": "https://github.com/projectdiscovery/subfinder/releases/download/v2.6.3/subfinder_2.6.3_windows_amd64.zip",
-                "executable": "subfinder.exe" if sys.platform == "win32" else "subfinder",
+                "repo": "projectdiscovery/subfinder",
+                "executable": "subfinder.exe" if self.system == "windows" else "subfinder",
                 "version_cmd": ["subfinder", "-version"]
             },
             "httpx": {
-                "url": "https://github.com/projectdiscovery/httpx/releases/download/v1.3.7/httpx_1.3.7_windows_amd64.zip",
-                "executable": "httpx.exe" if sys.platform == "win32" else "httpx",
+                "repo": "projectdiscovery/httpx",
+                "executable": "httpx.exe" if self.system == "windows" else "httpx",
                 "version_cmd": ["httpx", "-version"]
             },
             "nuclei": {
-                "url": "https://github.com/projectdiscovery/nuclei/releases/download/v3.1.7/nuclei_3.1.7_windows_amd64.zip",
-                "executable": "nuclei.exe" if sys.platform == "win32" else "nuclei",
+                "repo": "projectdiscovery/nuclei",
+                "executable": "nuclei.exe" if self.system == "windows" else "nuclei",
                 "version_cmd": ["nuclei", "-version"]
             }
         }
         self._setup_environment()
+
+    def _get_latest_release(self, repo: str) -> Tuple[str, str]:
+        """
+        Get the latest release version and download URL for a GitHub repository
+        """
+        session = create_requests_session()
+        # First try to get the latest release
+        release_url = f"https://api.github.com/repos/{repo}/releases/latest"
+        response = session.get(release_url)
+        
+        if response.status_code == 200:
+            release_data = response.json()
+            version = release_data['tag_name'].lstrip('v')
+            assets = release_data.get('assets', [])
+            
+            # Find the correct asset for our platform
+            for asset in assets:
+                asset_name = asset['name'].lower()
+                if (self.system in asset_name and 
+                    self.arch in asset_name and 
+                    asset_name.endswith('.zip')):
+                    return version, asset['browser_download_url']
+            
+            # If no matching asset found, try to construct the URL
+            tool_name = repo.split('/')[-1]
+            return version, f"https://github.com/{repo}/releases/download/v{version}/{tool_name}_{version}_{self.system}_{self.arch}.zip"
+        
+        # If no releases found, try to get the latest tag
+        tags_url = f"https://api.github.com/repos/{repo}/tags"
+        response = session.get(tags_url)
+        
+        if response.status_code == 200:
+            tags = response.json()
+            if tags:
+                latest_tag = tags[0]['name'].lstrip('v')
+                tool_name = repo.split('/')[-1]
+                return latest_tag, f"https://github.com/{repo}/releases/download/v{latest_tag}/{tool_name}_{latest_tag}_{self.system}_{self.arch}.zip"
+        
+        raise RuntimeError(f"Could not find latest release for {repo}")
+
+    def _get_download_url(self, tool_name: str) -> Tuple[str, str]:
+        """
+        Get the latest version and download URL for a tool
+        """
+        tool_info = self.required_tools[tool_name]
+        version, download_url = self._get_latest_release(tool_info["repo"])
+        logger.info(f"Found latest version {version} for {tool_name}")
+        return version, download_url
 
     def _setup_environment(self) -> None:
         """
@@ -47,7 +104,7 @@ class ToolManager:
         # Add tools directory to PATH if not already present
         tools_path = str(self.tools_dir)
         if tools_path not in os.environ['PATH']:
-            path_separator = ';' if sys.platform == 'win32' else ':'
+            path_separator = ';' if self.system == "windows" else ':'
             os.environ['PATH'] = f"{tools_path}{path_separator}{os.environ['PATH']}"
 
     def _is_tool_installed(self, tool_name: str) -> bool:
@@ -67,7 +124,7 @@ class ToolManager:
                 capture_output=True,
                 text=True,
                 timeout=5,
-                shell=True if sys.platform == "win32" else False
+                shell=True if self.system == "windows" else False
             )
             return result.returncode == 0
         except (subprocess.SubprocessError, FileNotFoundError):
@@ -85,23 +142,17 @@ class ToolManager:
             logger.info(f"{tool_name} is already installed and working")
             return
 
-        tool_info = self.required_tools[tool_name]
+        # Get the latest version and download URL
+        version, download_url = self._get_download_url(tool_name)
+        logger.info(f"Downloading {tool_name} v{version} for {self.system} {self.arch}...")
 
         # Download and extract tool
-        logger.info(f"Downloading {tool_name}...")
-        response = requests.get(tool_info["url"], stream=True)
-        response.raise_for_status()
-
-        # Save to temporary file
         temp_zip = self.tools_dir / f"{tool_name}.zip"
-        with open(temp_zip, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+        download_file(download_url, temp_zip)
 
         # Extract and make executable
-        logger.info(f"Installing {tool_name}...")
-        with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
-            zip_ref.extractall(self.tools_dir)
+        logger.info(f"Installing {tool_name} v{version}...")
+        extract_zip(temp_zip, self.tools_dir)
 
         # Clean up
         temp_zip.unlink()
@@ -110,24 +161,24 @@ class ToolManager:
         executable_path = None
         for root, _, files in os.walk(self.tools_dir):
             for file in files:
-                if file.lower() == tool_info["executable"].lower():
+                if file.lower() == self.required_tools[tool_name]["executable"].lower():
                     executable_path = Path(root) / file
                     break
             if executable_path:
                 break
 
         if not executable_path:
-            raise RuntimeError(f"Could not find {tool_info['executable']} in extracted files")
+            raise RuntimeError(f"Could not find {self.required_tools[tool_name]['executable']} in extracted files")
 
         # Make executable if needed
-        if sys.platform != "win32":
+        if self.system != "windows":
             current_permissions = os.stat(executable_path).st_mode
             os.chmod(executable_path, current_permissions | stat.S_IEXEC)
 
         # Add to PATH
         self._add_to_path(executable_path)
 
-        logger.info(f"{tool_name} installed successfully")
+        logger.info(f"{tool_name} v{version} installed successfully")
 
     def update_tool(self, tool_name: str) -> None:
         """
@@ -166,60 +217,13 @@ class ToolManager:
             logger.debug(f"Failed to get version for {tool_name}: {str(e)}")
         return None
 
-    def _get_platform(self) -> str:
-        """
-        Get the current platform in a format matching our tool configurations
-        """
-        system = platform.system().lower()
-        if system == "windows":
-            return "windows"
-        elif system == "linux":
-            return "linux"
-        elif system == "darwin":
-            return "darwin"
-        else:
-            raise ValueError(f"Unsupported operating system: {system}")
-
-    def _download_file(self, url: str, output_path: Path) -> None:
-        """
-        Download a file with progress bar
-        """
-        response = requests.get(url, stream=True)
-        total_size = int(response.headers.get('content-length', 0))
-        
-        with open(output_path, 'wb') as f, tqdm(
-            desc=output_path.name,
-            total=total_size,
-            unit='iB',
-            unit_scale=True,
-            unit_divisor=1024,
-        ) as bar:
-            for data in response.iter_content(chunk_size=1024):
-                size = f.write(data)
-                bar.update(size)
-
-    def _extract_zip(self, zip_path: Path, extract_to: Path) -> None:
-        """
-        Extract a zip file
-        """
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_to)
-
-    def _make_executable(self, path: Path) -> None:
-        """
-        Make a file executable
-        """
-        if not os.name == 'nt':  # Not Windows
-            current_permissions = os.stat(path).st_mode
-            os.chmod(path, current_permissions | stat.S_IEXEC)
-
     def _add_to_path(self, tool_path: Path) -> None:
         """
         Add tool directory to system PATH
         """
         tool_dir = str(tool_path.parent)
         if tool_dir not in os.environ['PATH']:
-            path_separator = ';' if sys.platform == 'win32' else ':'
+            path_separator = ';' if self.system == "windows" else ':'
             os.environ['PATH'] = f"{tool_dir}{path_separator}{os.environ['PATH']}"
 
     def install_all_tools(self) -> None:

@@ -5,10 +5,12 @@ Security scanner implementation
 import logging
 import subprocess
 import shutil
+import os
+import sys
+import re
 from pathlib import Path
 from typing import List, Optional, Set
 import signal
-import sys
 
 from autosubnuclei.utils.tool_manager import ToolManager
 from autosubnuclei.config.config_manager import ConfigManager
@@ -65,29 +67,36 @@ class SecurityScanner:
         else:
             logger.info("All required tools are already installed")
 
+    def _strip_ansi_codes(self, text: str) -> str:
+        """
+        Strip ANSI color codes from text
+        """
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        return ansi_escape.sub('', text)
+
+    def _run_command(self, command: List[str], shell: bool = False) -> subprocess.CompletedProcess:
+        """
+        Run a command with proper environment setup
+        """
+        try:
+            return subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                shell=shell,
+                check=True
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Command failed: {e.stderr}")
+            raise
+
     def _run_subfinder(self) -> Set[str]:
         """
         Run subfinder to discover subdomains
         """
-        subdomains_file = self.output_dir / "subdomains.txt"
-        
-        cmd = [
-            "subfinder",
-            "-d", self.domain,
-            "-o", str(subdomains_file)
-        ]
-
         logger.info(f"Running subfinder for {self.domain}")
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            logger.error(f"Subfinder failed: {result.stderr}")
-            raise RuntimeError(f"Subfinder failed: {result.stderr}")
-
-        # Read discovered subdomains
-        with open(subdomains_file, 'r') as f:
-            subdomains = {line.strip() for line in f if line.strip()}
-
+        result = self._run_command(["subfinder", "-d", self.domain, "-silent"])
+        subdomains = set(result.stdout.strip().split('\n'))
         logger.info(f"Found {len(subdomains)} subdomains")
         self.notifier.send_subdomains_found(self.domain, list(subdomains))
         return subdomains
@@ -96,63 +105,52 @@ class SecurityScanner:
         """
         Run httpx to find alive subdomains
         """
-        alive_file = self.output_dir / "alive.txt"
-        subdomains_file = self.output_dir / "subdomains.txt"
-        
-        # Write subdomains to temporary file
-        with open(subdomains_file, 'w') as f:
-            f.write('\n'.join(subdomains))
-
-        cmd = [
-            "httpx",
-            "-l", str(subdomains_file),
-            "-o", str(alive_file),
-            "-silent"
-        ]
-
         logger.info("Running httpx to find alive subdomains")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        # Write subdomains to temporary file
+        temp_file = self.output_dir / "subdomains.txt"
+        with open(temp_file, 'w') as f:
+            f.write('\n'.join(subdomains))
         
-        if result.returncode != 0:
-            logger.error(f"httpx failed: {result.stderr}")
-            raise RuntimeError(f"httpx failed: {result.stderr}")
-
-        # Read alive subdomains
-        with open(alive_file, 'r') as f:
-            alive_subdomains = {line.strip() for line in f if line.strip()}
-
+        result = self._run_command([
+            "httpx",
+            "-l", str(temp_file),
+            "-silent",
+            "-status-code",
+            "-title",
+            "-tech-detect"
+        ])
+        
+        # Clean up temp file
+        temp_file.unlink()
+        
+        # Strip ANSI codes from output
+        clean_output = self._strip_ansi_codes(result.stdout)
+        alive_subdomains = set(clean_output.strip().split('\n'))
+        
         logger.info(f"Found {len(alive_subdomains)} alive subdomains")
         self.notifier.send_alive_subdomains(self.domain, list(alive_subdomains))
         return alive_subdomains
 
-    def _run_nuclei(self, subdomains: Set[str], severities: List[str]) -> None:
+    def _run_nuclei(self, alive_subdomains: Set[str]) -> None:
         """
-        Run nuclei scan on subdomains
+        Run nuclei scan on alive subdomains
         """
-        results_file = self.output_dir / "results.txt"
-        subdomains_file = self.output_dir / "alive.txt"
-        
-        # Write subdomains to temporary file
-        with open(subdomains_file, 'w') as f:
-            f.write('\n'.join(subdomains))
-
-        cmd = [
-            "nuclei",
-            "-l", str(subdomains_file),
-            "-t", str(self.templates_path),
-            "-severity", ",".join(severities),
-            "-o", str(results_file)
-        ]
-
         logger.info("Running nuclei scan")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        # Write alive subdomains to temporary file
+        temp_file = self.output_dir / "alive.txt"
+        with open(temp_file, 'w') as f:
+            f.write('\n'.join(alive_subdomains))
         
-        if result.returncode != 0:
-            logger.error(f"Nuclei scan failed: {result.stderr}")
-            raise RuntimeError(f"Nuclei scan failed: {result.stderr}")
-
-        logger.info("Nuclei scan completed successfully")
-        self.notifier.send_scan_results(self.domain, results_file)
+        result = self._run_command([
+            "nuclei",
+            "-l", str(temp_file),
+            "-t", str(self.templates_path),
+            "-severity", "critical,high,medium,low",
+            "-o", str(self.output_dir / "results.txt")
+        ])
+        
+        # Clean up temp file
+        temp_file.unlink()
 
     def scan(self, severities: List[str], notify: bool = True) -> None:
         """
@@ -178,7 +176,7 @@ class SecurityScanner:
                 return
 
             # Step 3: Run nuclei scan
-            self._run_nuclei(alive_subdomains, severities)
+            self._run_nuclei(alive_subdomains)
             
             # Send completion notification
             if notify and self.config_manager.is_notifications_enabled():
