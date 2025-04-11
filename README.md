@@ -1,80 +1,135 @@
 # AutoSubNuclei
 
-Automated Security Scanning Pipeline that combines Subfinder, HTTPx, and Nuclei for comprehensive security testing.
+An automated security scanning tool that combines Subfinder, Httpx, and Nuclei for comprehensive security testing.
 
 ## Features
 
-- Automated installation of required tools (Subfinder, HTTPx, Nuclei)
-- Complete security scanning pipeline:
-  - Subdomain discovery using Subfinder
-  - Alive subdomain detection using HTTPx
-  - Vulnerability scanning using Nuclei
-- Cross-platform support (Windows, Linux, macOS)
-- Automatic tool updates and verification
-- Configurable severity levels for Nuclei scans
+- 🔍 Automated subdomain discovery using Subfinder
+- 🌐 HTTP probing with Httpx
+- 🎯 Vulnerability scanning with Nuclei
+- 🔔 Discord notifications for scan updates
+- 🚫 Graceful cancellation handling with notifications
+- 🛠️ Automatic tool installation and management
+- 📊 Detailed scan results and logging
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/aikazu/autosubnuclei.git
+git clone https://github.com/yourusername/autosubnuclei.git
 cd autosubnuclei
 ```
 
-2. Install Python dependencies:
+2. Create and activate a virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-## Usage
+## Configuration
 
-Basic usage:
+### Discord Notifications
+
+To enable Discord notifications:
+
+1. Run the setup command:
 ```bash
-python autosubnuclei.py example.com
+python autosubnuclei.py setup
 ```
 
-Advanced options:
+2. Enter your Discord webhook URL when prompted.
+
+The configuration will be saved in `~/.autosubnuclei/config.json`.
+
+## Usage
+
+### Basic Scan
+
 ```bash
-python autosubnuclei.py example.com \
-    --templates ~/nuclei-templates/ \
-    --output ./results \
-    --severities critical,high,medium \
+python autosubnuclei.py scan example.com
+```
+
+### Advanced Options
+
+```bash
+python autosubnuclei.py scan example.com \
+    --templates /path/to/templates \
+    --output /path/to/output \
+    --severities critical,high \
     --no-notify
 ```
 
-### Command Line Arguments
+### Options
 
-- `domain`: Target domain to scan (required)
-- `--templates`: Path to nuclei templates (default: ~/nuclei-templates/)
-- `--output`: Output directory for results (default: ./output)
-- `--severities`: Comma-separated Nuclei severity levels (default: critical,high,medium)
-- `--no-notify`: Disable notifications
-- `--log-file`: Path to log file
+- `--templates`: Path to Nuclei templates (default: built-in templates)
+- `--output`: Output directory for scan results (default: ./results)
+- `--severities`: Comma-separated list of severity levels (default: all)
+- `--no-notify`: Disable notifications for this scan
+- `--log-file`: Specify log file path (default: autosubnuclei.log)
+
+## Notification Types
+
+The tool sends the following types of notifications:
+
+1. 🚀 **Scan Started**: When a scan begins
+2. 🔍 **Subdomains Found**: List of discovered subdomains
+3. 🌐 **Alive Subdomains**: List of responsive subdomains
+4. 📊 **Scan Results**: Vulnerability findings
+5. ✅ **Scan Completed**: When scan finishes successfully
+6. 🚫 **Scan Cancelled**: When scan is interrupted or fails
+
+### Cancellation Scenarios
+
+The tool will send cancellation notifications in the following cases:
+
+- User interrupts the scan (Ctrl+C)
+- Tool installation fails
+- Critical errors during scanning
+- System signals (SIGTERM)
+
+## Tool Management
+
+The tool automatically:
+- Checks for required tools (Subfinder, Httpx, Nuclei)
+- Installs missing tools
+- Verifies tool functionality
+- Updates PATH for tool access
+
+Tools are installed in `~/.autosubnuclei/tools/` and are only downloaded if missing.
 
 ## Output
 
-The tool generates the following files in the output directory:
-- `subdomains.txt`: All discovered subdomains
-- `alive.txt`: Subdomains that are alive
-- `results.txt`: Nuclei scan results
+Scan results are saved in the specified output directory with the following structure:
+
+```
+output/
+├── subdomains.txt    # Discovered subdomains
+├── alive.txt        # Responsive subdomains
+└── results.txt      # Nuclei scan results
+```
+
+## Logging
+
+Logs are written to `autosubnuclei.log` by default. You can specify a custom log file using the `--log-file` option.
 
 ## Requirements
 
 - Python 3.7+
 - Internet connection for tool downloads
-- Sufficient disk space for tools and results
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+- Discord webhook URL (for notifications)
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Acknowledgments
 

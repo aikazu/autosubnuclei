@@ -5,3 +5,4 @@ argparse
 logging
 pathlib
 typing
+click
