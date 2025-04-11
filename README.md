@@ -49,12 +49,13 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-4. Run the setup command to configure notifications (optional):
+## Usage
+
+### Setup Notifications (Optional)
 ```bash
 python autosubnuclei.py setup
 ```
-
-## Usage
+This will prompt you to enter your Discord webhook URL for notifications.
 
 ### Basic Scan
 ```bash
@@ -65,23 +66,35 @@ python autosubnuclei.py scan example.com
 ```bash
 python autosubnuclei.py scan example.com \
     --templates ~/nuclei-templates/ \
-    --output results \
-    --severities critical,high \
-    --no-notify
+    --output output \
+    --severities critical,high,medium,low \
+    --no-notify \
+    --log-file scan.log
 ```
 
-### Options
+### Command Options
+
+#### Scan Command
+- `domain` (required): The target domain to scan
 - `--templates`: Path to Nuclei templates (default: ~/nuclei-templates/)
 - `--output`: Output directory for results (default: output)
 - `--severities`: Comma-separated list of severity levels (default: critical,high,medium,low)
-- `--no-notify`: Disable notifications
-- `--log-file`: Path to log file
+- `--no-notify`: Disable notifications for this scan
+- `--log-file`: Path to log file (optional)
+
+#### Setup Command
+- No additional options, just run `python autosubnuclei.py setup` and follow the prompts
 
 ## Project Structure
 
 ```
 autosubnuclei/
 ├── autosubnuclei.py          # Main CLI entry point
+├── autosubnuclei/            # Source code
+│   ├── commands/            # CLI commands
+│   ├── config/             # Configuration management
+│   ├── core/               # Core scanning functionality
+│   └── utils/              # Utility functions
 ├── config/                   # Configuration files
 │   └── config.json          # User configuration
 ├── tools/                    # Downloaded security tools
