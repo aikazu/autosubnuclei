@@ -1,5 +1,5 @@
 # Python
-__pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -50,3 +50,7 @@ nuclei-templates/
 *.temp
 *.bak
 *.backup
+
+# Configuration
+./config/config.json
+autosubnuclei.log
