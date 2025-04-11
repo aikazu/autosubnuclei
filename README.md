@@ -1,16 +1,26 @@
 # AutoSubNuclei
 
-An automated security scanning tool that combines Subfinder, Httpx, and Nuclei for comprehensive security testing.
+An automated security scanning pipeline that combines Subfinder, Httpx, and Nuclei for comprehensive security testing.
 
 ## Features
 
-- 🔍 Automated subdomain discovery using Subfinder
-- 🌐 HTTP probing with Httpx
+- 🔍 Automated subdomain discovery with Subfinder
+- 🌐 HTTP probing and technology detection with Httpx
 - 🎯 Vulnerability scanning with Nuclei
 - 🔔 Discord notifications for scan updates
-- 🚫 Graceful cancellation handling with notifications
-- 🛠️ Automatic tool installation and management
-- 📊 Detailed scan results and logging
+- 🛠️ Automatic tool installation and updates
+- 🖥️ Cross-platform support (Windows, Linux, macOS)
+- 🔄 Latest version detection for all tools
+- 🎨 Clean output formatting
+- 🚀 Virtual environment support
+- 📁 Local configuration management
+
+## Requirements
+
+- Python 3.7+
+- Virtual environment (recommended)
+- Internet connection for tool downloads
+- Discord webhook (optional, for notifications)
 
 ## Installation
 
@@ -21,9 +31,17 @@ cd autosubnuclei
 ```
 
 2. Create and activate a virtual environment:
+
+For Windows:
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+.\venv\Scripts\activate
+```
+
+For Linux/Mac:
+```bash
+python3 -m venv venv
+source venv/bin/activate
 ```
 
 3. Install dependencies:
@@ -31,109 +49,84 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Configuration
-
-### Discord Notifications
-
-To enable Discord notifications:
-
-1. Run the setup command:
+4. Run the setup command to configure notifications (optional):
 ```bash
 python autosubnuclei.py setup
 ```
 
-2. Enter your Discord webhook URL when prompted.
-
-The configuration will be saved in `~/.autosubnuclei/config.json`.
-
 ## Usage
 
 ### Basic Scan
-
 ```bash
 python autosubnuclei.py scan example.com
 ```
 
 ### Advanced Options
-
 ```bash
 python autosubnuclei.py scan example.com \
-    --templates /path/to/templates \
-    --output /path/to/output \
+    --templates ~/nuclei-templates/ \
+    --output results \
     --severities critical,high \
     --no-notify
 ```
 
 ### Options
+- `--templates`: Path to Nuclei templates (default: ~/nuclei-templates/)
+- `--output`: Output directory for results (default: output)
+- `--severities`: Comma-separated list of severity levels (default: critical,high,medium,low)
+- `--no-notify`: Disable notifications
+- `--log-file`: Path to log file
 
-- `--templates`: Path to Nuclei templates (default: built-in templates)
-- `--output`: Output directory for scan results (default: ./results)
-- `--severities`: Comma-separated list of severity levels (default: all)
-- `--no-notify`: Disable notifications for this scan
-- `--log-file`: Specify log file path (default: autosubnuclei.log)
+## Project Structure
 
-## Notification Types
+```
+autosubnuclei/
+├── autosubnuclei.py          # Main CLI entry point
+├── config/                   # Configuration files
+│   └── config.json          # User configuration
+├── tools/                    # Downloaded security tools
+├── output/                   # Scan results
+└── requirements.txt          # Python dependencies
+```
 
-The tool sends the following types of notifications:
+## Configuration
 
-1. 🚀 **Scan Started**: When a scan begins
-2. 🔍 **Subdomains Found**: List of discovered subdomains
-3. 🌐 **Alive Subdomains**: List of responsive subdomains
-4. 📊 **Scan Results**: Vulnerability findings
-5. ✅ **Scan Completed**: When scan finishes successfully
-6. 🚫 **Scan Cancelled**: When scan is interrupted or fails
-
-### Cancellation Scenarios
-
-The tool will send cancellation notifications in the following cases:
-
-- User interrupts the scan (Ctrl+C)
-- Tool installation fails
-- Critical errors during scanning
-- System signals (SIGTERM)
+Configuration is stored in `./config/config.json` and includes:
+- Discord webhook URL
+- Notification preferences
+- Default severity levels
+- Output directory settings
 
 ## Tool Management
 
-The tool automatically:
-- Checks for required tools (Subfinder, Httpx, Nuclei)
-- Installs missing tools
-- Verifies tool functionality
-- Updates PATH for tool access
+- Tools are automatically downloaded to the `./tools` directory
+- Latest versions are detected and installed
+- Tools are added to the system PATH
+- Automatic updates when new versions are available
 
-Tools are installed in `~/.autosubnuclei/tools/` and are only downloaded if missing.
+## Notifications
 
-## Output
-
-Scan results are saved in the specified output directory with the following structure:
-
-```
-output/
-├── subdomains.txt    # Discovered subdomains
-├── alive.txt        # Responsive subdomains
-└── results.txt      # Nuclei scan results
-```
-
-## Logging
-
-Logs are written to `autosubnuclei.log` by default. You can specify a custom log file using the `--log-file` option.
-
-## Requirements
-
-- Python 3.7+
-- Internet connection for tool downloads
-- Discord webhook URL (for notifications)
-
-## License
-
-MIT License
+The tool sends Discord notifications for:
+- Scan start
+- Subdomain discovery
+- Alive subdomains
+- Scan completion
+- Scan cancellation
+- Errors and warnings
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
 
-- [ProjectDiscovery](https://github.com/projectdiscovery) for their amazing tools:
-  - [Subfinder](https://github.com/projectdiscovery/subfinder)
-  - [HTTPx](https://github.com/projectdiscovery/httpx)
-  - [Nuclei](https://github.com/projectdiscovery/nuclei)
+- [ProjectDiscovery](https://projectdiscovery.io/) for their amazing tools
+- All contributors and users of this project
