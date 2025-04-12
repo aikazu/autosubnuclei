@@ -52,5 +52,5 @@ nuclei-templates/
 *.backup
 
 # Configuration
-/config/config.json
+config/config.json
 autosubnuclei.log
