@@ -7,7 +7,7 @@ An automated security scanning pipeline that combines Subfinder, Httpx, and Nucl
 - 🔍 Automated subdomain discovery with Subfinder
 - 🌐 HTTP probing and technology detection with Httpx
 - 🎯 Vulnerability scanning with Nuclei
-- 🔔 Discord notifications for scan updates
+- 🔔 Multiple notification options (Discord, Slack, Telegram)
 - 🛠️ Automatic tool installation and updates
 - 🖥️ Cross-platform support (Windows, Linux, macOS)
 - 🔄 Latest version detection for all tools
@@ -27,7 +27,7 @@ An automated security scanning pipeline that combines Subfinder, Httpx, and Nucl
 - Python 3.7+
 - Virtual environment (recommended)
 - Internet connection for tool downloads
-- Discord webhook (optional, for notifications)
+- Notification service accounts (optional, for Discord/Slack/Telegram notifications)
 
 ## Installation
 
@@ -62,7 +62,18 @@ pip install -r requirements.txt
 ```bash
 python autosubnuclei.py setup
 ```
-This will prompt you to enter your Discord webhook URL for notifications.
+This will prompt you with a menu to configure notification options:
+- Discord webhooks
+- Slack webhooks
+- Telegram bot
+
+You can also set up specific notification channels directly:
+```bash
+python autosubnuclei.py setup --discord  # Set up Discord
+python autosubnuclei.py setup --slack    # Set up Slack
+python autosubnuclei.py setup --telegram # Set up Telegram
+python autosubnuclei.py setup --disable  # Disable all notifications
+```
 
 ### Basic Scan
 ```bash
@@ -115,43 +126,40 @@ python autosubnuclei.py scan example.com \
 - `--force`: Force update even if already up to date
 
 #### Setup Command
-- No additional options, just run `python autosubnuclei.py setup` and follow the prompts
+- `--discord`: Configure Discord webhook notifications
+- `--slack`: Configure Slack webhook notifications
+- `--telegram`: Configure Telegram bot notifications
+- `--disable`: Disable all notifications
+- No options: Shows an interactive setup menu
 
-## Performance Optimizations
+## Notification Setup Guide
 
-AutoSubNuclei has been optimized for performance:
+### Discord Notifications
+1. Open your Discord server settings
+2. Go to Integrations > Webhooks
+3. Create a new webhook for the channel where you want to receive notifications
+4. Copy the webhook URL
+5. Run `python autosubnuclei.py setup --discord` and paste the URL
 
-- **Asynchronous Processing**: Uses Python's asyncio for non-blocking operations
-- **Concurrent Execution**: Runs multiple tasks in parallel to maximize throughput
-- **Intelligent Batching**: Processes subdomains in batches for better resource utilization
-- **Result Caching**: Stores intermediate results to speed up repeated scans
-- **Memory Optimization**: Reduces memory footprint by processing data in chunks
-- **Progress Monitoring**: Real-time feedback on scan progress with minimal overhead
-- **Auto-download Templates**: Automatically downloads nuclei templates into the workspace
-- **Self-contained**: All files stay within the workspace directory
+### Slack Notifications
+1. Go to your Slack workspace settings
+2. Navigate to Apps > Incoming Webhooks
+3. Create a new app or use an existing one
+4. Activate Incoming Webhooks and create a new webhook
+5. Copy the webhook URL
+6. Run `python autosubnuclei.py setup --slack` and paste the URL
 
-## Project Structure
-
-```
-autosubnuclei/
-├── autosubnuclei.py          # Main CLI entry point
-├── autosubnuclei/            # Source code
-│   ├── commands/            # CLI commands
-│   ├── config/             # Configuration management
-│   ├── core/               # Core scanning functionality
-│   └── utils/              # Utility functions
-├── config/                   # Configuration files
-│   └── config.json          # User configuration
-├── tools/                    # Downloaded security tools
-├── output/                   # Scan results
-└── requirements.txt          # Python dependencies
-```
+### Telegram Notifications
+1. Talk to [@BotFather](https://t.me/botfather) on Telegram
+2. Create a new bot using the `/newbot` command
+3. Copy the bot token provided
+4. Talk to [@userinfobot](https://t.me/userinfobot) to get your chat ID
+5. Run `python autosubnuclei.py setup --telegram` and enter both the token and chat ID
 
 ## Configuration
 
-Configuration is stored in `./config/config.json` and includes:
-- Discord webhook URL
-- Notification preferences
+Configuration is stored in `config.json` in the project root and includes:
+- Notification settings (Discord, Slack, Telegram)
 - Default severity levels
 - Output directory settings
 - Concurrency settings
@@ -167,7 +175,12 @@ Configuration is stored in `./config/config.json` and includes:
 
 ## Notifications
 
-The tool sends Discord notifications for:
+The tool can send notifications through multiple channels:
+- Discord webhooks
+- Slack webhooks
+- Telegram bots
+
+Notifications are sent for:
 - Scan start
 - Subdomain discovery
 - Alive subdomains

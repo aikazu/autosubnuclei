@@ -34,6 +34,9 @@ class SecurityScanner:
         self.config_manager = ConfigManager()
         self.notifier = Notifier(self.config_manager)
         
+        # Get system information from tool manager
+        self.system, self.arch = self.tool_manager.system, self.tool_manager.arch
+        
         # Create cache directory
         self.cache_dir = self.output_dir / ".cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -407,29 +410,98 @@ class SecurityScanner:
         output_file = self.output_dir / f"results_{hashlib.md5(''.join(subdomains_batch).encode()).hexdigest()[:8]}.txt"
         
         try:
+            # Find the nuclei executable in the tools directory
+            nuclei_path = None
+            if self.system == "windows":
+                nuclei_path = self.tool_manager.tools_dir / "nuclei.exe"
+            else:
+                nuclei_path = self.tool_manager.tools_dir / "nuclei"
+                
+            if not nuclei_path.exists():
+                # Fallback to using nuclei from PATH
+                nuclei_path = "nuclei"
+            else:
+                nuclei_path = str(nuclei_path.absolute())
+            
+            # Base command with minimal options for compatibility
             command = [
-                "nuclei",
+                nuclei_path,
                 "-l", temp_path,
-                "-t", ",".join(template_batch) if template_batch else str(self.templates_path),
+                "-t", str(self.templates_path),
                 "-severity", ",".join(severities),
-                "-o", str(output_file),
-                "-silent"
+                "-o", str(output_file)
             ]
             
-            # Add additional nuclei optimization flags
-            command.extend(["-c", str(self.max_workers)])
+            # Just use a single tag exclusion for most problematic templates
+            command.extend(["-exclude-tags", "fuzz"])
             
-            await self._run_command_async(command)
+            logger.debug(f"Running nuclei command: {' '.join(command)}")
+            
+            # For Windows, run the process with specific handling
+            if self.system == "windows":
+                try:
+                    process = subprocess.Popen(
+                        command,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW  # Prevent console window
+                    )
+                    
+                    # Wait for process with a timeout
+                    try:
+                        stdout, stderr = process.communicate(timeout=180)  # 3 minute timeout
+                        
+                        # Log any errors
+                        if process.returncode != 0:
+                            logger.warning(f"Nuclei exited with code {process.returncode}: {stderr}")
+                            
+                        # Just continue even with errors - we'll count any findings we got
+                    except subprocess.TimeoutExpired:
+                        # Kill the process if it takes too long
+                        process.kill()
+                        logger.warning("Nuclei scan timed out after 3 minutes")
+                        
+                except Exception as e:
+                    logger.error(f"Exception running nuclei: {str(e)}")
+            else:
+                # For non-Windows, use the original approach
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        *command,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        limit=1024*1024  # Increase buffer size
+                    )
+                    
+                    # Wait for process with timeout
+                    try:
+                        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=180)
+                        
+                        if process.returncode != 0:
+                            logger.warning(f"Nuclei exited with code {process.returncode}: {stderr.decode()}")
+                    except asyncio.TimeoutError:
+                        # Kill the process if it takes too long
+                        process.kill()
+                        logger.warning("Nuclei scan timed out after 3 minutes")
+                except Exception as e:
+                    logger.error(f"Exception running nuclei: {str(e)}")
             
             # Count vulnerabilities from the output file
             vuln_count = 0
+            vulnerabilities = []
+            
             if output_file.exists():
                 with open(output_file, 'r') as f:
-                    vuln_count = sum(1 for _ in f)
+                    for line in f:
+                        if any(f"[{sev}]" in line.lower() for sev in severities):
+                            vuln_count += 1
+                            vulnerabilities.append(line.strip())
             
             return {
                 "output_file": output_file,
-                "vulnerabilities": vuln_count
+                "vulnerabilities": vuln_count,
+                "vulnerability_data": vulnerabilities
             }
         except Exception as e:
             logger.error(f"Error in nuclei batch: {str(e)}")
@@ -440,11 +512,12 @@ class SecurityScanner:
             }
         finally:
             # Clean up temp file
-            os.unlink(temp_path)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
 
     async def _run_nuclei(self, alive_subdomains: Set[str], severities: List[str]) -> None:
         """
-        Run nuclei scan on alive subdomains with parallel batches
+        Run nuclei scan on alive subdomains with parallel batches and detailed reporting
         """
         logger.info("Running nuclei scan")
         self.scan_state["status"] = "scanning_vulnerabilities"
@@ -460,31 +533,71 @@ class SecurityScanner:
         subdomain_batches = [subdomains_list[i:i + batch_size] 
                           for i in range(0, len(subdomains_list), batch_size)]
         
-        # Process batches concurrently
-        tasks = []
+        # Process batches one at a time for stability on Windows
+        batch_results = []
         for batch in subdomain_batches:
             # Run each batch with all templates
-            tasks.append(self._run_nuclei_batch(batch, severities, []))
-        
-        batch_results = await asyncio.gather(*tasks)
+            result = await self._run_nuclei_batch(batch, severities, [])
+            batch_results.append(result)
         
         # Combine results into a single output file
-        final_output = self.output_dir / "results.txt"
+        final_output_file = self.output_dir / "results.txt"
         total_vulns = 0
         
-        with open(final_output, 'w') as outfile:
-            for result in batch_results:
-                output_file = result.get("output_file")
-                if output_file and output_file.exists():
-                    with open(output_file, 'r') as infile:
-                        outfile.write(infile.read())
-                    # Add to total vulnerabilities
-                    total_vulns += result.get("vulnerabilities", 0)
-                    # Clean up individual output files
-                    output_file.unlink()
+        # Create a dictionary to store vulnerability counts by severity
+        severity_counts = {sev: 0 for sev in ["critical", "high", "medium", "low", "info"]}
         
+        # Make sure output file exists and is empty
+        with open(final_output_file, 'w') as _:
+            pass
+        
+        # Process all batch results
+        for result in batch_results:
+            output_file = result.get("output_file")
+            if output_file and output_file.exists():
+                # Add vulnerabilities from this batch
+                total_vulns += result.get("vulnerabilities", 0)
+                
+                # Copy contents to main results file
+                with open(output_file, 'r') as infile, open(final_output_file, 'a') as outfile:
+                    for line in infile:
+                        outfile.write(line)
+                        
+                        # Count by severity
+                        line_lower = line.lower()
+                        for sev in severity_counts.keys():
+                            if f"[{sev}]" in line_lower:
+                                severity_counts[sev] += 1
+                                break
+                
+                # Clean up individual output files
+                output_file.unlink()
+        
+        # Generate a human-readable summary report
+        report_file = self.output_dir / "scan_report.txt"
+        with open(report_file, 'w') as report:
+            report.write(f"Nuclei Scan Report for {self.domain}\n")
+            report.write("=" * 50 + "\n\n")
+            report.write(f"Total Vulnerabilities Found: {total_vulns}\n\n")
+            
+            # Write severity counts
+            report.write("Vulnerability Counts by Severity:\n")
+            report.write("-" * 35 + "\n")
+            
+            for severity, count in severity_counts.items():
+                report.write(f"  {severity.upper()}: {count}\n")
+            
+            report.write("\nFor detailed results, check results.txt\n")
+        
+        # Log results
         logger.info(f"Found {total_vulns} potential vulnerabilities")
+        if total_vulns > 0:
+            logger.info(f"Severity breakdown: Critical={severity_counts['critical']}, " +
+                        f"High={severity_counts['high']}, Medium={severity_counts['medium']}, " +
+                        f"Low={severity_counts['low']}, Info={severity_counts['info']}")
+                        
         self.scan_state["vulnerabilities"] = total_vulns
+        self.scan_state["severity_counts"] = severity_counts
 
     async def scan(self, severities: List[str], notify: bool = True) -> None:
         """

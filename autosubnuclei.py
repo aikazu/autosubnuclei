@@ -7,6 +7,7 @@ import sys
 import os
 import json
 from typing import List
+import time
 
 import click
 from tqdm import tqdm
@@ -17,7 +18,7 @@ from autosubnuclei.config.settings import (
     validate_domain,
     validate_severities,
     validate_output_dir,
-    NUCLEI_CONFIG
+    DEFAULT_CONFIG
 )
 from autosubnuclei.utils.helpers import setup_logging
 from autosubnuclei.commands.setup import setup
@@ -36,7 +37,8 @@ def cli():
               help="Output directory for results")
 @click.option('--no-notify', is_flag=True,
               help="Disable notifications")
-@click.option('--severities', default=",".join(NUCLEI_CONFIG["default_severities"]),
+@click.option('--severities', 
+              default=",".join(DEFAULT_CONFIG["nuclei_template_filters"]["template_severity_mapping"]["medium"]),
               help="Comma-separated Nuclei severity levels")
 @click.option('--log-file', type=click.Path(),
               help="Path to log file")
@@ -333,97 +335,74 @@ def update(tools, templates, update_all, templates_dir, force):
         sys.exit(1)
 
 class ProgressMonitor:
-    """Monitor and display scan progress"""
+    """Monitor and display scan progress with simple status messages"""
     
     def __init__(self, scanner):
         self.scanner = scanner
         self.last_status = ""
-        self.progress_bar = None
+        self.last_message_time = 0
+        self.status_messages = {
+            "initializing": "🚀 Initializing scan...",
+            "downloading_templates": "📥 Downloading nuclei templates...",
+            "discovering_subdomains": "📡 Discovering subdomains...",
+            "probing_subdomains": "🌐 Probing subdomains...",
+            "scanning_vulnerabilities": "🔍 Scanning for vulnerabilities...",
+            "completed": "✅ Scan completed!",
+            "error": "❌ Scan failed!"
+        }
     
     def update(self):
-        """Update the progress display"""
+        """Update the progress display with simple status messages"""
         try:
             current_status = self.scanner.scan_state.get("status", "")
+            current_time = time.time()
             
             # Skip updates if status is missing
             if not current_status:
                 return
             
-            # Only create a new progress bar if the status changed
-            if self.last_status != current_status:
-                # Close existing progress bar if any
-                self._close_progress_bar()
+            # Only print a new status message if the status changed or 10 seconds passed
+            if (self.last_status != current_status or 
+                current_time - self.last_message_time > 10):
                 
-                # Create appropriate progress bar based on the current stage
-                if current_status == "downloading_templates":
-                    self.progress_bar = tqdm(desc="📥 Downloading nuclei templates", unit=" bytes")
-                    # Indeterminate progress - we'll pulse it
-                    self.progress_bar.total = 100
-                    self.progress_bar.n = 0
-                elif current_status == "discovering_subdomains":
-                    self.progress_bar = tqdm(desc="📡 Discovering subdomains", unit=" subdomains")
+                # Get the appropriate message for this status
+                message = self.status_messages.get(current_status, f"⏳ {current_status.replace('_', ' ').title()}...")
+                
+                # Add counts to the message if available
+                if current_status == "discovering_subdomains":
+                    subdomains = self.scanner.scan_state.get("subdomains", 0)
+                    if subdomains > 0:
+                        message = f"📡 Found {subdomains} subdomains..."
+                
                 elif current_status == "probing_subdomains":
-                    total = self.scanner.scan_state.get("subdomains", 0)
-                    if total > 0:
-                        self.progress_bar = tqdm(desc="🌐 Probing subdomains", total=total, unit=" alive")
-                    else:
-                        # If no subdomains found, use indeterminate progress
-                        self.progress_bar = tqdm(desc="🌐 Probing subdomains", unit=" alive")
+                    subdomains = self.scanner.scan_state.get("subdomains", 0)
+                    alive = self.scanner.scan_state.get("alive_subdomains", 0)
+                    if alive > 0:
+                        message = f"🌐 Found {alive}/{subdomains} alive subdomains..."
+                
                 elif current_status == "scanning_vulnerabilities":
-                    total = self.scanner.scan_state.get("alive_subdomains", 0)
-                    if total > 0:
-                        self.progress_bar = tqdm(desc="🔍 Scanning for vulnerabilities", total=total, unit=" scanned")
-                    else:
-                        # If no alive subdomains found, use indeterminate progress
-                        self.progress_bar = tqdm(desc="🔍 Scanning for vulnerabilities", unit=" scanned")
+                    alive = self.scanner.scan_state.get("alive_subdomains", 0)
+                    if alive > 0:
+                        message = f"🔍 Scanning {alive} targets for vulnerabilities..."
+                
                 elif current_status == "completed":
-                    self._close_progress_bar()
                     duration = self.scanner.scan_state.get("duration", 0)
                     vulns = self.scanner.scan_state.get("vulnerabilities", 0)
-                    print(f"✅ Scan completed in {duration:.1f}s, found {vulns} potential vulnerabilities")
-                    self.progress_bar = None
+                    message = f"✅ Scan completed in {duration:.1f}s, found {vulns} potential vulnerabilities"
+                
                 elif current_status == "error":
-                    self._close_progress_bar()
                     error_msg = self.scanner.scan_state.get("error", "Unknown error")
-                    print(f"❌ Scan failed: {error_msg}")
-                    self.progress_bar = None
-                    
+                    message = f"❌ Scan failed: {error_msg}"
+                
+                # Print the message
+                print(message)
+                
+                # Update the tracking variables
                 self.last_status = current_status
-            
-            # Update progress based on the current stage
-            elif self.progress_bar:
-                if current_status == "downloading_templates":
-                    # For template downloading, just pulse the progress bar
-                    self.progress_bar.n = (self.progress_bar.n + 5) % 100
-                    self.progress_bar.refresh()
-                elif current_status == "discovering_subdomains":
-                    subdomains = self.scanner.scan_state.get("subdomains", 0)
-                    if subdomains > 0 and self.progress_bar.n < subdomains:
-                        self.progress_bar.update(subdomains - self.progress_bar.n)
-                elif current_status == "probing_subdomains":
-                    alive = self.scanner.scan_state.get("alive_subdomains", 0)
-                    if alive > 0 and self.progress_bar.n < alive:
-                        self.progress_bar.update(alive - self.progress_bar.n)
-                elif current_status == "scanning_vulnerabilities":
-                    # For vulnerability scanning, we approximate progress
-                    if self.progress_bar.total and self.progress_bar.total > 0:
-                        remaining = max(0, self.progress_bar.total - self.progress_bar.n)
-                        step = max(1, int(remaining * 0.1))  # Update in steps of 10%
-                        self.progress_bar.update(step)
+                self.last_message_time = current_time
+                
         except Exception as e:
-            # If progress bar update fails, close it and log error
-            if self.progress_bar:
-                self._close_progress_bar()
             print(f"Progress monitoring error: {str(e)}")
-    
-    def _close_progress_bar(self):
-        """Safely close the progress bar if it exists"""
-        if self.progress_bar:
-            try:
-                self.progress_bar.close()
-            except:
-                pass  # Ignore errors when closing
-            self.progress_bar = None
 
 async def run_scan_with_progress(scanner, severities, notify, progress_monitor):
     """Run the scan with progress monitoring"""
@@ -437,6 +416,8 @@ async def run_scan_with_progress(scanner, severities, notify, progress_monitor):
         # Make sure the error is passed to the scan state
         scanner.scan_state["status"] = "error"
         scanner.scan_state["error"] = str(e)
+        # Wait a moment for the progress monitor to update
+        await asyncio.sleep(1)
         raise
     finally:
         # Ensure monitoring task is canceled when scan is done
@@ -445,24 +426,16 @@ async def run_scan_with_progress(scanner, severities, notify, progress_monitor):
             await monitoring_task
         except asyncio.CancelledError:
             pass
-        # Make sure to close any leftover progress bars
-        if progress_monitor.progress_bar:
-            progress_monitor.progress_bar.close()
 
 async def monitor_progress(progress_monitor):
-    """Monitor and display progress"""
+    """Monitor and display progress periodically"""
     try:
         while True:
             progress_monitor.update()
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)  # Update every second
     except asyncio.CancelledError:
-        # Final update before exiting
-        progress_monitor.update()
-        # Close progress bar if still open to prevent tqdm errors
-        if progress_monitor.progress_bar:
-            progress_monitor.progress_bar.close()
-            progress_monitor.progress_bar = None
-        raise
+        # Expected when the task is cancelled
+        pass
 
 # Add commands
 cli.add_command(scan)
