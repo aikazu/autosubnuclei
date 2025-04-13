@@ -4,6 +4,7 @@ Configuration manager for handling settings and credentials
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -11,9 +12,8 @@ logger = logging.getLogger(__name__)
 
 class ConfigManager:
     def __init__(self):
-        # Use config directory in the workspace
-        self.config_dir = Path(__file__).parent.parent.parent / "config"
-        self.config_dir.mkdir(parents=True, exist_ok=True)
+        # Use root directory for config file
+        self.config_dir = Path(__file__).parent.parent.parent  # Root workspace directory
         self.config_file = self.config_dir / "config.json"
         self._ensure_config_exists()
 
@@ -22,6 +22,20 @@ class ConfigManager:
         Ensure config file exists with default values
         """
         if not self.config_file.exists():
+            # Check if old config exists in config/ directory
+            old_config_path = self.config_dir / "config" / "config.json"
+            if old_config_path.exists():
+                # Migrate config from old location
+                try:
+                    with open(old_config_path, 'r') as f:
+                        config = json.load(f)
+                    self.save_config(config)
+                    logger.info(f"Migrated config from {old_config_path} to {self.config_file}")
+                    return
+                except Exception as e:
+                    logger.warning(f"Failed to migrate old config: {str(e)}")
+            
+            # Create default config
             default_config = {
                 "discord_webhook": "",
                 "notifications_enabled": False,
@@ -30,6 +44,7 @@ class ConfigManager:
                 "log_file": "autosubnuclei.log"
             }
             self.save_config(default_config)
+            logger.info(f"Created default config at {self.config_file}")
 
     def load_config(self) -> Dict[str, Any]:
         """

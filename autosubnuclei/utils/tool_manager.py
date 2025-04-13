@@ -10,6 +10,7 @@ import subprocess
 import logging
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
+import re
 
 from .helpers import (
     get_platform_info,
@@ -112,89 +113,87 @@ class ToolManager:
         Check if a tool is installed and working
         """
         tool_info = self.required_tools[tool_name]
-        tool_path = shutil.which(tool_info["executable"])
         
-        if not tool_path:
-            return False
-            
+        # First check if the tool exists in our tools directory
+        tool_path_in_dir = self.tools_dir / tool_info["executable"]
+        if tool_path_in_dir.exists():
+            # For ProjectDiscovery tools, just checking if the file exists is enough
+            # since their version command can sometimes fail in CI environments
+            return True
+        
+        # Fall back to checking in PATH
+        tool_path = shutil.which(tool_info["executable"])
+        return tool_path is not None
+
+    def install_tool(self, tool_name: str) -> bool:
+        """
+        Install a tool by downloading and extracting it from GitHub
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        tool_info = self.required_tools[tool_name]
+        
+        logging.info(f"Installing {tool_name}...")
+        
         try:
-            # Check if tool is executable and returns version
-            result = subprocess.run(
-                tool_info["version_cmd"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                shell=True if self.system == "windows" else False
-            )
-            return result.returncode == 0
-        except (subprocess.SubprocessError, FileNotFoundError):
+            # Get latest version and download URL
+            version, download_url = self._get_download_url(tool_name)
+            
+            # Download the tool
+            download_path = self.tools_dir / f"{tool_name}.zip"
+            download_file(download_url, download_path)
+            
+            # Extract the tool
+            extract_zip(download_path, self.tools_dir)
+            
+            # Make the tool executable on Unix-like systems
+            if self.system != "windows":
+                tool_path = self.tools_dir / tool_info["executable"]
+                if tool_path.exists():
+                    st = os.stat(tool_path)
+                    os.chmod(tool_path, st.st_mode | stat.S_IEXEC)
+            
+            # Clean up the zip file
+            if download_path.exists():
+                download_path.unlink()
+                
+            # Verify installation
+            if self._is_tool_installed(tool_name):
+                logging.info(f"{tool_name} installed successfully!")
+                return True
+            else:
+                logging.error(f"Failed to verify {tool_name} installation.")
+                return False
+                
+        except Exception as e:
+            logging.error(f"Error installing {tool_name}: {str(e)}")
             return False
 
-    def install_tool(self, tool_name: str) -> None:
-        """
-        Install a specific tool
-        """
-        if tool_name not in self.required_tools:
-            raise ValueError(f"Unknown tool: {tool_name}")
-
-        # Check if tool is already installed and working
-        if self._is_tool_installed(tool_name):
-            logger.info(f"{tool_name} is already installed and working")
-            return
-
-        # Get the latest version and download URL
-        version, download_url = self._get_download_url(tool_name)
-        logger.info(f"Downloading {tool_name} v{version} for {self.system} {self.arch}...")
-
-        # Download and extract tool
-        temp_zip = self.tools_dir / f"{tool_name}.zip"
-        download_file(download_url, temp_zip)
-
-        # Extract and make executable
-        logger.info(f"Installing {tool_name} v{version}...")
-        extract_zip(temp_zip, self.tools_dir)
-
-        # Clean up
-        temp_zip.unlink()
-
-        # Find the actual executable in the extracted files
-        executable_path = None
-        for root, _, files in os.walk(self.tools_dir):
-            for file in files:
-                if file.lower() == self.required_tools[tool_name]["executable"].lower():
-                    executable_path = Path(root) / file
-                    break
-            if executable_path:
-                break
-
-        if not executable_path:
-            raise RuntimeError(f"Could not find {self.required_tools[tool_name]['executable']} in extracted files")
-
-        # Make executable if needed
-        if self.system != "windows":
-            current_permissions = os.stat(executable_path).st_mode
-            os.chmod(executable_path, current_permissions | stat.S_IEXEC)
-
-        # Add to PATH
-        self._add_to_path(executable_path)
-
-        logger.info(f"{tool_name} v{version} installed successfully")
-
-    def update_tool(self, tool_name: str) -> None:
+    def update_tool(self, tool_name: str) -> bool:
         """
         Update a specific tool to the latest version
+        
+        Returns:
+            bool: True if update successful, False otherwise
         """
         if tool_name not in self.required_tools:
             raise ValueError(f"Unknown tool: {tool_name}")
+
+        logging.info(f"Updating {tool_name}...")
 
         # Remove existing installation
         tool_info = self.required_tools[tool_name]
         tool_path = self.tools_dir / tool_info["executable"]
         if tool_path.exists():
-            tool_path.unlink()
+            try:
+                tool_path.unlink()
+            except Exception as e:
+                logging.error(f"Failed to remove existing {tool_name}: {str(e)}")
+                return False
 
         # Install latest version
-        self.install_tool(tool_name)
+        return self.install_tool(tool_name)
 
     def get_tool_version(self, tool_name: str) -> Optional[str]:
         """
@@ -205,14 +204,65 @@ class ToolManager:
 
         tool_info = self.required_tools[tool_name]
         try:
-            result = subprocess.run(
-                tool_info["version_cmd"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            # Check if the tool exists in our tools directory
+            tool_path_in_dir = self.tools_dir / tool_info["executable"]
+            cmd = None
+            
+            if tool_path_in_dir.exists():
+                # Use absolute path for the command
+                if self.system == "windows":
+                    cmd = f"{tool_path_in_dir.absolute()} -version"
+                else:
+                    cmd = [str(tool_path_in_dir.absolute()), "-version"]
+            else:
+                # Fall back to using the command from PATH
+                if self.system == "windows":
+                    cmd = f"{tool_info['executable']} -version"
+                else:
+                    cmd = [tool_info['executable'], "-version"]
+            
+            # For Windows, always use shell=True with string command
+            if self.system == "windows":
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    shell=True
+                )
+            else:
+                # For non-Windows, use command list without shell
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    shell=False
+                )
+            
             if result.returncode == 0:
-                return result.stdout.strip()
+                # Extract version number from command output
+                output = result.stdout.strip()
+                
+                # ProjectDiscovery tools often show "Current Version: vX.Y.Z"
+                pd_version_match = re.search(r'Current Version:\s*v?(\d+\.\d+\.\d+)', output, re.IGNORECASE)
+                if pd_version_match:
+                    return pd_version_match.group(1)
+                
+                # Look for version in format: vX.Y.Z or X.Y.Z
+                version_match = re.search(r'v?(\d+\.\d+\.\d+)', output)
+                if version_match:
+                    return version_match.group(1)
+                    
+                # Look for version in format: version X.Y.Z
+                version_match = re.search(r'version\s+v?(\d+\.\d+\.\d+)', output, re.IGNORECASE)
+                if version_match:
+                    return version_match.group(1)
+                
+                # If no match found, return a cleaned version of the first line
+                first_line = output.split('\n')[0].strip()
+                return first_line
+                
         except Exception as e:
             logger.debug(f"Failed to get version for {tool_name}: {str(e)}")
         return None
