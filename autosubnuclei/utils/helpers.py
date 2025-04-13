@@ -2,10 +2,13 @@
 Helper functions for logging and other utilities
 """
 
-import logging
+import os
+import sys
 import platform
-import requests
+import subprocess
+import logging
 import zipfile
+import requests
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 from tqdm import tqdm
@@ -80,22 +83,53 @@ def create_requests_session() -> requests.Session:
 def download_file(url: str, output_path: Path) -> None:
     """
     Download a file with progress bar
-    """
-    session = create_requests_session()
-    response = session.get(url, stream=True)
-    response.raise_for_status()
     
-    total_size = int(response.headers.get('content-length', 0))
-    with open(output_path, 'wb') as f, tqdm(
-        desc=output_path.name,
-        total=total_size,
-        unit='iB',
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as bar:
-        for data in response.iter_content(chunk_size=1024):
-            size = f.write(data)
-            bar.update(size)
+    Args:
+        url: URL to download from
+        output_path: Path object where to save the file
+    """
+    logger = logging.getLogger(__name__)
+    
+    # Validate that output_path is a Path object
+    if not isinstance(output_path, Path):
+        raise TypeError(f"output_path must be a Path object, got {type(output_path).__name__}")
+    
+    try:
+        session = create_requests_session()
+        logger.debug(f"Downloading from {url} to {output_path}")
+        
+        # Ensure parent directory exists
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Download the file
+        response = session.get(url, stream=True)
+        response.raise_for_status()
+        
+        total_size = int(response.headers.get('content-length', 0))
+        with open(output_path, 'wb') as f, tqdm(
+            desc=output_path.name,
+            total=total_size,
+            unit='iB',
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as bar:
+            for data in response.iter_content(chunk_size=1024):
+                size = f.write(data)
+                bar.update(size)
+                
+        # Verify download
+        if not output_path.exists():
+            raise FileNotFoundError(f"Download failed: {output_path} not found after download")
+        if output_path.stat().st_size == 0:
+            raise ValueError(f"Download failed: {output_path} is empty (0 bytes)")
+            
+        logger.debug(f"Download completed: {output_path} ({output_path.stat().st_size} bytes)")
+    except Exception as e:
+        logger.error(f"Download failed from {url}: {str(e)}")
+        # Clean up partial downloads
+        if output_path.exists():
+            output_path.unlink()
+        raise
 
 def extract_zip(zip_path: Path, extract_to: Path) -> None:
     """

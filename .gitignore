@@ -41,6 +41,9 @@ output/
 *.txt
 !requirements.txt
 tools/
+.cursor/
+TASK.MD
+PLANNING.MD
 
 # Nuclei templates
 nuclei-templates/
@@ -52,5 +55,5 @@ nuclei-templates/
 *.backup
 
 # Configuration
-config/config.json
+config.json
 autosubnuclei.log
