@@ -42,18 +42,27 @@ def _update_tools(tool_manager: ToolManager, force: bool):
                 print(f"    {reason}")
                 print(f"  ⬆️ Updating {tool_name}...")
                 logger.info(f"Attempting update for {tool_name}. Reason: {reason}")
-                tool_manager.update_tool(tool_name)
-                new_version = tool_manager.get_tool_version(tool_name)
-                print(f"  ✅ {tool_name} updated successfully to version {new_version or 'Unknown'}")
-                logger.info(f"{tool_name} updated successfully to {new_version}")
-                updated_tools.append(tool_name)
+                # Capture the result of the update attempt
+                update_successful = tool_manager.update_tool(tool_name)
+
+                if update_successful:
+                    new_version = tool_manager.get_tool_version(tool_name)
+                    print(f"  ✅ {tool_name} updated successfully to version {new_version or 'Unknown'}")
+                    logger.info(f"{tool_name} updated successfully to {new_version}")
+                    updated_tools.append(tool_name)
+                else:
+                    # Report failure based on update_tool result
+                    print(f"  ❌ Failed to update {tool_name}. Check logs for details (e.g., download/install error).")
+                    logger.error(f"update_tool reported failure for {tool_name}.")
+                    failed_tools.append(tool_name)
             else:
                 print(f"  ✅ {tool_name} is already up to date.")
                 logger.info(f"{tool_name} is up to date.")
 
         except Exception as e:
-            logger.error(f"Failed to update {tool_name}: {e}", exc_info=True)
-            print(f"  ❌ Failed to update {tool_name}: {str(e)}")
+            # Catch errors during the check/update process for this tool
+            logger.error(f"Error during update process for {tool_name}: {e}", exc_info=True)
+            print(f"  ❌ Error processing update for {tool_name}: {str(e)}")
             failed_tools.append(tool_name)
 
     print("\n🎉 Tool update check completed.")
@@ -78,6 +87,15 @@ def _run_nuclei_update_cli(nuclei_path: Path, templates_path: Path):
     logger.debug("Nuclei update STDERR:")
     logger.debug(process.stderr)
 
+    # Print Nuclei output to console for easier debugging
+    if process.stdout:
+        print("--- Nuclei STDOUT ---")
+        print(process.stdout.strip())
+    if process.stderr:
+        print("--- Nuclei STDERR ---")
+        print(process.stderr.strip())
+        print("-------------------")
+
     if process.returncode != 0:
         # Handle common error: Directory not found/issue
         if ("no such file or directory" in process.stderr.lower() or
@@ -92,6 +110,15 @@ def _run_nuclei_update_cli(nuclei_path: Path, templates_path: Path):
             logger.debug(process.stdout)
             logger.debug("Nuclei retry STDERR:")
             logger.debug(process.stderr)
+
+            # Print Nuclei retry output to console
+            if process.stdout:
+                print("--- Nuclei Retry STDOUT ---")
+                print(process.stdout.strip())
+            if process.stderr:
+                print("--- Nuclei Retry STDERR ---")
+                print(process.stderr.strip())
+                print("-------------------------")
 
             # Raise error if retry also failed
             if process.returncode != 0:
@@ -142,9 +169,12 @@ def _update_templates(tool_manager: ToolManager, templates_dir_str: str, force: 
     version_file = templates_path / ".version"
 
     try:
-        nuclei_path = tool_manager.get_tool_path("nuclei")
-        if not nuclei_path:
+        # Use the correct method name
+        nuclei_path_obj = tool_manager.get_tool_executable_path("nuclei")
+        if not nuclei_path_obj:
+             # Raise specific error if path is None
              raise FileNotFoundError("Nuclei binary not found. Cannot update templates. Run setup or update --tools first.")
+        nuclei_path = str(nuclei_path_obj) # Convert Path object to string for subprocess command
 
         # Check local version file info (optional display)
         if version_file.exists() and not force:

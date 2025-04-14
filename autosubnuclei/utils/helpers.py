@@ -67,7 +67,7 @@ def get_platform_info() -> Tuple[str, str]:
 
 def create_requests_session() -> requests.Session:
     """
-    Create a requests session with retry logic
+    Create a requests session with retry logic and optional GitHub authentication
     """
     session = requests.Session()
     retry = Retry(

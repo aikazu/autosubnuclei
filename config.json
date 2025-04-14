@@ -1,0 +1,26 @@
+{
+    "notifications": {
+        "enabled": false,
+        "discord": {
+            "enabled": false,
+            "webhook_url": ""
+        },
+        "slack": {
+            "enabled": false,
+            "webhook_url": ""
+        },
+        "telegram": {
+            "enabled": false,
+            "bot_token": "",
+            "chat_id": ""
+        }
+    },
+    "default_severities": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+    ],
+    "default_output_dir": "results",
+    "log_file": "autosubnuclei.log"
+}

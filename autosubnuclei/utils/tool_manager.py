@@ -11,6 +11,8 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 import re
+import requests
+import json
 
 from .helpers import (
     get_platform_info,
@@ -55,39 +57,71 @@ class ToolManager:
         Get the latest release version and download URL for a GitHub repository
         """
         session = create_requests_session()
-        # First try to get the latest release
         release_url = f"https://api.github.com/repos/{repo}/releases/latest"
-        response = session.get(release_url)
-        
-        if response.status_code == 200:
+        logger.debug(f"Attempting to fetch latest release info from: {release_url}")
+
+        try:
+            response = session.get(release_url, timeout=15) # Add timeout
+            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+
             release_data = response.json()
             version = release_data['tag_name'].lstrip('v')
             assets = release_data.get('assets', [])
-            
+            logger.debug(f"Found latest release tag: v{version} for {repo}")
+
             # Find the correct asset for our platform
             for asset in assets:
                 asset_name = asset['name'].lower()
                 if (self.system in asset_name and 
                     self.arch in asset_name and 
                     asset_name.endswith('.zip')):
+                    logger.debug(f"Found matching asset: {asset_name}")
                     return version, asset['browser_download_url']
             
-            # If no matching asset found, try to construct the URL
-            tool_name = repo.split('/')[-1]
-            return version, f"https://github.com/{repo}/releases/download/v{version}/{tool_name}_{version}_{self.system}_{self.arch}.zip"
-        
-        # If no releases found, try to get the latest tag
+            logger.warning(f"No suitable asset found in latest release v{version} for {self.system}/{self.arch}. Trying tags.")
+            # If no matching asset found, fall through to tag logic
+
+        except requests.exceptions.HTTPError as e:
+            # Specifically handle HTTP errors (like 404 Not Found, 403 Forbidden/Rate Limit)
+            logger.warning(f"HTTP error fetching latest release for {repo} ({e.response.status_code}): {e}. Trying tags...")
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Network error fetching latest release for {repo}: {e}. Trying tags...")
+        except (KeyError, json.JSONDecodeError) as e:
+            logger.warning(f"Error parsing latest release JSON for {repo}: {e}. Trying tags...")
+        except Exception as e:
+            # Catch other potential errors during release check
+            logger.error(f"Unexpected error fetching/parsing latest release for {repo}: {e}. Trying tags...", exc_info=True)
+
+        # Fallback: If latest release check fails or doesn't find asset, try tags
         tags_url = f"https://api.github.com/repos/{repo}/tags"
-        response = session.get(tags_url)
-        
-        if response.status_code == 200:
+        logger.debug(f"Falling back to fetching tags from: {tags_url}")
+        try:
+            response = session.get(tags_url, timeout=15)
+            response.raise_for_status()
             tags = response.json()
             if tags:
                 latest_tag = tags[0]['name'].lstrip('v')
                 tool_name = repo.split('/')[-1]
-                return latest_tag, f"https://github.com/{repo}/releases/download/v{latest_tag}/{tool_name}_{latest_tag}_{self.system}_{self.arch}.zip"
-        
-        raise RuntimeError(f"Could not find latest release for {repo}")
+                # Construct URL based on tag (may not always be correct if assets aren't standard)
+                download_url = f"https://github.com/{repo}/releases/download/v{latest_tag}/{tool_name}_{latest_tag}_{self.system}_{self.arch}.zip"
+                logger.info(f"Found latest tag v{latest_tag} for {repo}. Constructed URL: {download_url}")
+                return latest_tag, download_url
+            else:
+                logger.warning(f"No tags found for {repo}.")
+
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP error fetching tags for {repo} ({e.response.status_code}): {e}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error fetching tags for {repo}: {e}")
+        except (KeyError, json.JSONDecodeError) as e:
+            logger.error(f"Error parsing tags JSON for {repo}: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error fetching/parsing tags for {repo}: {e}", exc_info=True)
+
+        # If both methods fail, raise the error
+        error_msg = f"Could not find latest release or suitable tag for {repo} on GitHub for {self.system}/{self.arch}."
+        logger.critical(error_msg)
+        raise RuntimeError(error_msg)
 
     def _get_download_url(self, tool_name: str) -> Tuple[str, str]:
         """
@@ -195,6 +229,47 @@ class ToolManager:
         # Install latest version
         return self.install_tool(tool_name)
 
+    def check_update_needed(self, tool_name: str, force: bool) -> Tuple[bool, str]:
+        """Compares local version with latest GitHub release.
+
+        Returns:
+            Tuple[bool, str]: (True/False if update needed, Reason string)
+        """
+        if tool_name not in self.required_tools:
+            return False, f"Unknown tool: {tool_name}"
+
+        if force:
+            return True, "Force update requested"
+
+        logger.debug(f"Checking update requirement for {tool_name} (force={force})...")
+
+        try:
+            current_version = self.get_tool_version(tool_name)
+            if not current_version:
+                logger.info(f"Update needed for {tool_name}: Not installed or version unknown.")
+                return True, "Tool not installed or version unknown"
+
+            logger.debug(f"Current local version for {tool_name}: {current_version}")
+
+            # Fetch latest version tag from GitHub
+            latest_version, _ = self._get_download_url(tool_name)
+            logger.debug(f"Latest available version for {tool_name}: {latest_version}")
+
+            # Simple string comparison (assumes consistent X.Y.Z format after stripping 'v')
+            # More robust comparison (e.g., using packaging.version) could be added if needed.
+            if latest_version != current_version:
+                reason = f"New version {latest_version} available (current: {current_version})"
+                logger.info(f"Update needed for {tool_name}: {reason}")
+                return True, reason
+            else:
+                logger.info(f"{tool_name} is up to date (version {current_version}).")
+                return False, "Tool is up to date"
+
+        except Exception as e:
+            logger.warning(f"Could not reliably check for {tool_name} update: {e}. Proceeding with update attempt just in case.", exc_info=True)
+            # If we can't check, assume an update might be needed or beneficial
+            return True, f"Could not verify latest version ({e})"
+
     def get_tool_version(self, tool_name: str) -> Optional[str]:
         """
         Get the version of an installed tool
@@ -265,6 +340,31 @@ class ToolManager:
                 
         except Exception as e:
             logger.debug(f"Failed to get version for {tool_name}: {str(e)}")
+        return None
+
+    def get_tool_executable_path(self, tool_name: str) -> Optional[Path]:
+        """Find the path to the tool executable, checking local tools dir first, then PATH."""
+        if tool_name not in self.required_tools:
+            logger.error(f"Attempted to get path for unknown tool: {tool_name}")
+            return None
+
+        tool_info = self.required_tools[tool_name]
+        executable_name = tool_info["executable"]
+
+        # 1. Check in local tools directory
+        path_in_tools_dir = self.tools_dir / executable_name
+        if path_in_tools_dir.is_file(): # More specific check than exists()
+            logger.debug(f"Found {tool_name} executable in tools directory: {path_in_tools_dir}")
+            return path_in_tools_dir.absolute()
+
+        # 2. Check in system PATH
+        path_in_system = shutil.which(executable_name)
+        if path_in_system:
+            logger.debug(f"Found {tool_name} executable in system PATH: {path_in_system}")
+            return Path(path_in_system)
+
+        # 3. Not found
+        logger.warning(f"Executable '{executable_name}' for tool '{tool_name}' not found in tools directory or system PATH.")
         return None
 
     def _add_to_path(self, tool_path: Path) -> None:

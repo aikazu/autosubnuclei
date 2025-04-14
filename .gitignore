@@ -34,13 +34,13 @@ env/
 .DS_Store
 
 # Project specific outputs / tools / logs
-output/         # Ignore all scan outputs
-tools/          # Ignore downloaded tool binaries
-*.log           # Ignore all log files
-.cursor/        # Ignore Cursor AI state
+output/
+tools/
+*.log
+.cursor/
 
 # Nuclei templates
-nuclei-templates/ # Ignore downloaded templates
+nuclei-templates/
 
 # Temporary files
 *.tmp
