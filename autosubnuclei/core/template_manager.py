@@ -95,7 +95,7 @@ class TemplateManager:
             logger.debug(f"Downloading template archive from {self.REPO_URL} to {temp_path}")
             print("[INFO] Downloading template archive (this may take a few moments)...")
             session = create_requests_session() # Assumes this helper exists and is appropriate
-            download_file(self.REPO_URL, Path(temp_path), description="Downloading templates") # Assumes helper handles progress
+            download_file(self.REPO_URL, Path(temp_path), session=session) # Removed description, added session
 
             # Extract and finalize
             print("[INFO] Extracting template archive...")

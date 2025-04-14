@@ -241,7 +241,13 @@ class SecurityScanner:
         logger.info(f"Running subfinder for {self.domain}")
         self.scan_state["status"] = "discovering_subdomains"
         
-        command = [self.tool_manager.get_tool_path("subfinder"), "-d", self.domain, "-silent"]
+        subfinder_path = self.tool_manager.get_tool_executable_path("subfinder")
+        if not subfinder_path:
+            # Handle case where tool is not found (should ideally be caught earlier)
+            logger.error("Subfinder executable not found by ToolManager. Cannot proceed.")
+            raise FileNotFoundError("Subfinder executable not found.")
+
+        command = [str(subfinder_path.absolute()), "-d", self.domain, "-silent"]
         cache_key = self._get_cache_key(command)
         
         # Try to get from cache first
@@ -338,7 +344,7 @@ class SecurityScanner:
     def _build_nuclei_command(self, input_list_path: str, output_file_path: Path, severities: List[str]) -> List[str]:
         # Purpose: Construct the command-line arguments for running Nuclei.
         # Usage: command_args = self._build_nuclei_command("input.txt", Path("out.txt"), ["high"])
-        nuclei_path = self.tool_manager.get_tool_path("nuclei")
+        nuclei_path = self.tool_manager.get_tool_executable_path("nuclei")
         if not nuclei_path:
             logger.warning("Nuclei binary not found in tools directory, trying PATH...")
             nuclei_path_str = "nuclei" # Fallback to PATH

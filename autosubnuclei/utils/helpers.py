@@ -26,6 +26,15 @@ def setup_logging(log_file: Optional[Path] = None) -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
 
+    # --- Prevent adding handlers multiple times ---
+    if root_logger.hasHandlers():
+        # If handlers already exist, assume logging is configured and exit
+        # You might want more sophisticated checks depending on the application
+        # For example, check if a specific handler type already exists.
+        # logger.debug("Root logger already has handlers. Skipping setup.")
+        return
+    # -----------------------------------------------
+
     # Console handler
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
@@ -80,13 +89,14 @@ def create_requests_session() -> requests.Session:
     session.mount('https://', adapter)
     return session
 
-def download_file(url: str, output_path: Path) -> None:
+def download_file(url: str, output_path: Path, session: Optional[requests.Session] = None) -> None:
     """
     Download a file with progress bar
     
     Args:
         url: URL to download from
         output_path: Path object where to save the file
+        session: Optional pre-configured requests.Session to use for the download
     """
     logger = logging.getLogger(__name__)
     
@@ -94,15 +104,17 @@ def download_file(url: str, output_path: Path) -> None:
     if not isinstance(output_path, Path):
         raise TypeError(f"output_path must be a Path object, got {type(output_path).__name__}")
     
+    # Use provided session or create a new one
+    _session = session if session else create_requests_session()
+
     try:
-        session = create_requests_session()
-        logger.debug(f"Downloading from {url} to {output_path}")
+        logger.debug(f"Downloading from {url} to {output_path} using session {id(_session)}")
         
         # Ensure parent directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Download the file
-        response = session.get(url, stream=True)
+        response = _session.get(url, stream=True)
         response.raise_for_status()
         
         total_size = int(response.headers.get('content-length', 0))
