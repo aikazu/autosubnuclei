@@ -7,10 +7,13 @@ import os
 import shutil
 import tempfile
 import zipfile
+import time # Import time
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 import requests
+import json # Import json
 
 # Assuming helpers are available in utils
 from ..utils.helpers import create_requests_session, download_file
@@ -24,7 +27,7 @@ class TemplateManager:
     DEFAULT_TEMPLATES_DIR_NAME = "nuclei-templates"
     VERSION_FILE_NAME = ".version" # Using .version as used in SecurityScanner previously
     REPO_URL = "https://github.com/projectdiscovery/nuclei-templates/archive/refs/heads/master.zip"
-    COMMIT_API_URL = "https://api.github.com/repos/projectdiscovery/nuclei-templates/commits/master"
+    # COMMIT_API_URL = "https://api.github.com/repos/projectdiscovery/nuclei-templates/commits/master" # No longer used
 
     def __init__(self, templates_path: Path):
         # Purpose: Initialize the TemplateManager with the target path for templates.
@@ -33,76 +36,49 @@ class TemplateManager:
 
     def ensure_templates_exist(self) -> None:
         # Purpose: Check if templates exist and download them if necessary.
+        #          Checks for the directory itself, not just the version file.
         # Usage: tm.ensure_templates_exist()
-        version_file = self.templates_path / self.VERSION_FILE_NAME
-        if not version_file.exists(): # Simple check for existence via version file
+        # Check if the directory exists and contains YAML files
+        if not self.templates_path.is_dir() or not any(self.templates_path.glob('**/*.yaml')):
             print(f"[INFO] Nuclei templates not found or incomplete at {self.templates_path}. Attempting download...")
-            logger.info(f"Nuclei templates version file not found at {version_file}. Triggering download.")
+            logger.info(f"Nuclei templates directory not found or empty at {self.templates_path}. Triggering download.")
             self.download_and_setup_templates()
         else:
-            print(f"[INFO] Nuclei templates found at {self.templates_path} (based on presence of {self.VERSION_FILE_NAME}).")
+            print(f"[INFO] Nuclei templates found at {self.templates_path}.")
             logger.info(f"Using existing Nuclei templates at {self.templates_path}")
+            # Optionally add a check here for staleness based on timestamp in .version
 
     def download_and_setup_templates(self) -> None:
-        # Purpose: Orchestrate the download and setup of Nuclei templates.
+        # Purpose: Orchestrate the download and setup of Nuclei templates without API check.
         # Usage: tm.download_and_setup_templates()
         try:
-            print("[INFO] Checking latest Nuclei templates from GitHub...")
-            commit_hash = self._get_latest_template_commit()
-
+            # Removed the check for latest commit hash
             print("[INFO] Starting template download process...")
-            self._download_and_extract_templates(commit_hash)
+            self._download_and_extract_templates() # Pass no hash
             print("[SUCCESS] Nuclei templates downloaded and set up successfully.")
 
         except Exception as e:
             logger.error(f"Failed to download/setup templates: {str(e)}", exc_info=True)
             print(f"[ERROR] Failed during template download/setup: {e}")
-            # Re-raise as a specific error type if needed, or let the original exception propagate
             raise
 
-    def _get_latest_template_commit(self) -> Optional[str]:
-        # Purpose: Fetch the latest commit hash for nuclei-templates from GitHub API.
-        # Usage: commit_hash = self._get_latest_template_commit()
-        try:
-            logger.debug(f"Fetching latest commit info from {self.COMMIT_API_URL}")
-            response = requests.get(self.COMMIT_API_URL, timeout=15) # Increased timeout
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-            commit_hash = response.json()["sha"]
-            logger.info(f"Latest templates commit from GitHub: {commit_hash[:7]}")
-            return commit_hash
-        except requests.exceptions.Timeout:
-            logger.warning("Timeout connecting to GitHub API for commit info.")
-            return None
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Could not get latest commit info from GitHub API: {e}")
-            return None
-        except (KeyError, json.JSONDecodeError) as e:
-            logger.warning(f"Error processing GitHub API response for commit info: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error getting commit info: {e}", exc_info=True)
-            return None # Don't block download if commit check fails
-
-    def _download_and_extract_templates(self, commit_hash: Optional[str]) -> None:
+    def _download_and_extract_templates(self) -> None: # Removed commit_hash argument
         # Purpose: Download the template archive, extract it, and finalize the setup.
         # Usage: Called internally.
         temp_path = None
         try:
-            # Download zip to a temporary file
-            # Use mkstemp for better security/atomicity if possible, but NamedTemporaryFile is often simpler
             with tempfile.NamedTemporaryFile(delete=False, suffix='.zip', prefix='nuclei-templates-') as temp_file:
                 temp_path = temp_file.name
             logger.debug(f"Downloading template archive from {self.REPO_URL} to {temp_path}")
             print("[INFO] Downloading template archive (this may take a few moments)...")
-            session = create_requests_session() # Assumes this helper exists and is appropriate
-            download_file(self.REPO_URL, Path(temp_path), session=session) # Removed description, added session
+            session = create_requests_session()
+            download_file(self.REPO_URL, Path(temp_path), session=session)
 
-            # Extract and finalize
             print("[INFO] Extracting template archive...")
-            self._extract_and_finalize_templates(temp_path, commit_hash)
+            # Pass None for commit_hash as it's no longer used for versioning here
+            self._extract_and_finalize_templates(temp_path, None)
 
         finally:
-            # Clean up the temporary zip file
             if temp_path and os.path.exists(temp_path):
                 try:
                     logger.debug(f"Removing temporary download file: {temp_path}")
@@ -110,7 +86,7 @@ class TemplateManager:
                 except OSError as e:
                     logger.warning(f"Could not remove temporary template download file {temp_path}: {e}")
 
-    def _extract_and_finalize_templates(self, zip_path: str, commit_hash: Optional[str]) -> None:
+    def _extract_and_finalize_templates(self, zip_path: str, commit_hash: Optional[str]) -> None: # Keep commit_hash arg for now, but it will be None
         # Purpose: Extract the downloaded zip archive and move templates to the target path.
         # Usage: Called internally.
         with tempfile.TemporaryDirectory(prefix="nuclei-extract-") as temp_dir:
@@ -125,51 +101,45 @@ class TemplateManager:
                 logger.error(f"Failed to extract template archive {zip_path}: {e}", exc_info=True)
                 raise RuntimeError(f"Failed to extract template archive: {e}") from e
 
-            # Assume the main content is in a subdirectory named 'nuclei-templates-master'
             extracted_dir = Path(temp_dir) / "nuclei-templates-master"
             if not extracted_dir.exists() or not extracted_dir.is_dir():
-                # Log contents of temp_dir for debugging if needed
                 logger.error(f"Could not find expected directory 'nuclei-templates-master' inside extracted archive at {temp_dir}")
                 raise FileNotFoundError("Could not find 'nuclei-templates-master' directory in the downloaded archive.")
 
             try:
-                # Prepare target directory (ensure parent exists, clear old target)
                 target_path = self.templates_path
                 target_path.parent.mkdir(parents=True, exist_ok=True)
-                if target_path.is_file(): # Remove if it's somehow a file
+                if target_path.is_file():
                     logger.warning(f"Target template path {target_path} exists as a file, removing it.")
                     target_path.unlink()
-                if target_path.exists(): # Remove existing directory for clean update
+                if target_path.exists():
                     print(f"[INFO] Removing existing templates directory at {target_path} for clean update...")
                     logger.info(f"Removing existing templates directory: {target_path}")
                     shutil.rmtree(target_path)
 
-                # Move extracted templates to final destination
                 print(f"[INFO] Moving template files to final destination: {target_path}...")
                 logger.info(f"Moving extracted templates from {extracted_dir} to {target_path}...")
-                # shutil.move is generally preferred over copytree for this pattern
                 shutil.move(str(extracted_dir), str(target_path))
 
             except Exception as e:
                  logger.error(f"Failed to move templates from {extracted_dir} to {target_path}: {e}", exc_info=True)
                  raise RuntimeError(f"Failed to finalize template installation: {e}") from e
 
-            # Save version information if available
-            self._save_template_version(commit_hash)
+            # Save download timestamp instead of commit hash
+            self._save_template_version_timestamp()
 
             logger.info(f"Templates successfully finalized at {target_path}")
 
-    def _save_template_version(self, commit_hash: Optional[str]) -> None:
-        # Purpose: Save the commit hash to the version file within the templates directory.
+    def _save_template_version_timestamp(self) -> None:
+        # Purpose: Save the download timestamp to the version file.
         # Usage: Called internally after successful extraction/move.
-        if commit_hash:
-            version_file = self.templates_path / self.VERSION_FILE_NAME
-            logger.debug(f"Saving template version {commit_hash[:7]} to {version_file}")
-            try:
-                with open(version_file, "w") as f:
-                    f.write(commit_hash)
-                logger.info(f"Saved template version info: {commit_hash[:7]}")
-            except IOError as e:
-                logger.warning(f"Could not save version info to {version_file}: {e}")
-        else:
-            logger.warning("No commit hash available to save template version.") 
+        version_file = self.templates_path / self.VERSION_FILE_NAME
+        download_time = time.time()
+        logger.debug(f"Saving template download timestamp {download_time} to {version_file}")
+        try:
+            with open(version_file, "w") as f:
+                # Store as ISO format string for readability
+                f.write(datetime.fromtimestamp(download_time).isoformat())
+            logger.info(f"Saved template download timestamp.")
+        except IOError as e:
+            logger.warning(f"Could not save version info to {version_file}: {e}") 

@@ -112,39 +112,53 @@ class SecurityScanner:
             missing_tools = [tool for tool, installed in tool_status.items() if not installed]
             if missing_tools:
                 print(f"[WARN] Missing tools detected: {', '.join(missing_tools)}.")
-                # Optionally add confirmation here if needed, or proceed directly
                 print(f"[INFO] Attempting to install missing tools...")
                 logger.info(f"Installing missing tools: {', '.join(missing_tools)}")
-                self.scan_state["status"] = "setting_up_tools" # Update status
-                
+                self.scan_state["status"] = "setting_up_tools"
+
                 installed_tools = []
                 failed_tools = []
-                # Install tools concurrently
                 with ThreadPoolExecutor(max_workers=min(len(missing_tools), self.max_workers)) as executor:
                     futures = {executor.submit(self.tool_manager.install_tool, tool): tool for tool in missing_tools}
-                    
+
                     for future in as_completed(futures):
                         tool = futures[future]
                         try:
-                            future.result() # Wait for install to complete
-                            print(f"[SUCCESS] Successfully installed {tool}.")
-                            logger.info(f"Successfully installed {tool}")
-                            installed_tools.append(tool)
+                            install_successful = future.result() # Get the boolean result from install_tool
+                            if install_successful:
+                                logger.info(f"Successfully installed {tool}")
+                                installed_tools.append(tool)
+                            else:
+                                # ToolManager already logs the specific error, just record failure here
+                                logger.warning(f"Installation reported as failed for {tool}.")
+                                failed_tools.append(tool)
                         except Exception as e:
-                            print(f"[ERROR] Failed to install {tool}: {str(e)}")
-                            logger.error(f"Failed to install {tool}: {str(e)}", exc_info=True)
+                            # Catch exceptions raised by install_tool itself (e.g., network error if not handled within)
+                            print(f"[ERROR] Exception during installation of {tool}: {str(e)}")
+                            logger.error(f"Exception during installation of {tool}: {str(e)}", exc_info=True)
                             failed_tools.append(tool)
 
-                # Verify installation again
-                tool_status = self.tool_manager.verify_all_tools()
-                if not all(tool_status.values()):
-                    still_missing = [tool for tool, installed in tool_status.items() if not installed]
-                    error_msg = f"Failed to install required tools: {', '.join(still_missing)}"
+                # Report summary of installation attempts
+                if installed_tools:
+                    print(f"[SUCCESS] Successfully installed: {', '.join(installed_tools)}.")
+                if failed_tools:
+                    # Failed tools list already contains tools that failed or raised exceptions
+                    print(f"[ERROR] Failed to install: {', '.join(failed_tools)}. Check logs for details.")
+                    # Ensure failed_tools is accurate even if install_tool returned False but didn't raise Exception
+                    failed_tools = list(set(failed_tools + [t for t in missing_tools if t not in installed_tools]))
+                else:
+                    print("[INFO] All attempted tool installations completed.") # Message if no failures
+
+                # Verify installation again - crucial check
+                tool_status_after_install = self.tool_manager.verify_all_tools()
+                if not all(tool_status_after_install.values()):
+                    still_missing = [tool for tool, installed in tool_status_after_install.items() if not installed]
+                    error_msg = f"Failed to verify required tools after installation attempt: {', '.join(still_missing)}"
                     print(f"[ERROR] {error_msg}")
                     self.notifier.send_cancellation_notification(self.domain, error_msg)
                     raise RuntimeError(error_msg)
                 else:
-                    print("[SUCCESS] All required tools are now installed.")
+                    print("[SUCCESS] All required tools are now verified.")
             else:
                 print("[INFO] All required tools are already installed.")
                 logger.info("All required tools are already installed")
