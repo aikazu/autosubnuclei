@@ -26,34 +26,24 @@ ENV/
 env/
 .env
 
-# IDE
+# IDE / OS Specific
 .idea/
 .vscode/
 *.swp
 *.swo
 .DS_Store
 
-# Project specific
-.autosubnuclei/
-*.log
-results/
-output/
-*.txt
-!requirements.txt
-tools/
-.cursor/
-TASK.MD
-PLANNING.MD
+# Project specific outputs / tools / logs
+output/         # Ignore all scan outputs
+tools/          # Ignore downloaded tool binaries
+*.log           # Ignore all log files
+.cursor/        # Ignore Cursor AI state
 
 # Nuclei templates
-nuclei-templates/
+nuclei-templates/ # Ignore downloaded templates
 
 # Temporary files
 *.tmp
 *.temp
 *.bak
 *.backup
-
-# Configuration
-config.json
-autosubnuclei.log
