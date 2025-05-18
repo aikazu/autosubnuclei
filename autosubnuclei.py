@@ -21,12 +21,16 @@ from autosubnuclei.config.settings import (
 )
 from autosubnuclei.utils.helpers import setup_logging
 from autosubnuclei.commands.setup import setup
+from autosubnuclei.commands.resume import register_command as register_resume_command
 from autosubnuclei.utils.tool_manager import ToolManager
 
 @click.group()
 def cli():
     """AutoSubNuclei - Automated Security Scanning Pipeline"""
     pass
+
+# Register commands
+register_resume_command(cli)
 
 @cli.command()
 @click.argument('domain')
@@ -349,72 +353,117 @@ class ProgressMonitor:
             if not current_status:
                 return
             
-            # Only create a new progress bar if the status changed
+            # Process status change or update existing progress bar
             if self.last_status != current_status:
-                # Close existing progress bar if any
-                self._close_progress_bar()
-                
-                # Create appropriate progress bar based on the current stage
-                if current_status == "downloading_templates":
-                    self.progress_bar = tqdm(desc="📥 Downloading nuclei templates", unit=" bytes")
-                    # Indeterminate progress - we'll pulse it
-                    self.progress_bar.total = 100
-                    self.progress_bar.n = 0
-                elif current_status == "discovering_subdomains":
-                    self.progress_bar = tqdm(desc="📡 Discovering subdomains", unit=" subdomains")
-                elif current_status == "probing_subdomains":
-                    total = self.scanner.scan_state.get("subdomains", 0)
-                    if total > 0:
-                        self.progress_bar = tqdm(desc="🌐 Probing subdomains", total=total, unit=" alive")
-                    else:
-                        # If no subdomains found, use indeterminate progress
-                        self.progress_bar = tqdm(desc="🌐 Probing subdomains", unit=" alive")
-                elif current_status == "scanning_vulnerabilities":
-                    total = self.scanner.scan_state.get("alive_subdomains", 0)
-                    if total > 0:
-                        self.progress_bar = tqdm(desc="🔍 Scanning for vulnerabilities", total=total, unit=" scanned")
-                    else:
-                        # If no alive subdomains found, use indeterminate progress
-                        self.progress_bar = tqdm(desc="🔍 Scanning for vulnerabilities", unit=" scanned")
-                elif current_status == "completed":
-                    self._close_progress_bar()
-                    duration = self.scanner.scan_state.get("duration", 0)
-                    vulns = self.scanner.scan_state.get("vulnerabilities", 0)
-                    print(f"✅ Scan completed in {duration:.1f}s, found {vulns} potential vulnerabilities")
-                    self.progress_bar = None
-                elif current_status == "error":
-                    self._close_progress_bar()
-                    error_msg = self.scanner.scan_state.get("error", "Unknown error")
-                    print(f"❌ Scan failed: {error_msg}")
-                    self.progress_bar = None
-                    
-                self.last_status = current_status
-            
-            # Update progress based on the current stage
+                self._handle_status_change(current_status)
             elif self.progress_bar:
-                if current_status == "downloading_templates":
-                    # For template downloading, just pulse the progress bar
-                    self.progress_bar.n = (self.progress_bar.n + 5) % 100
-                    self.progress_bar.refresh()
-                elif current_status == "discovering_subdomains":
-                    subdomains = self.scanner.scan_state.get("subdomains", 0)
-                    if subdomains > 0 and self.progress_bar.n < subdomains:
-                        self.progress_bar.update(subdomains - self.progress_bar.n)
-                elif current_status == "probing_subdomains":
-                    alive = self.scanner.scan_state.get("alive_subdomains", 0)
-                    if alive > 0 and self.progress_bar.n < alive:
-                        self.progress_bar.update(alive - self.progress_bar.n)
-                elif current_status == "scanning_vulnerabilities":
-                    # For vulnerability scanning, we approximate progress
-                    if self.progress_bar.total and self.progress_bar.total > 0:
-                        remaining = max(0, self.progress_bar.total - self.progress_bar.n)
-                        step = max(1, int(remaining * 0.1))  # Update in steps of 10%
-                        self.progress_bar.update(step)
+                self._update_existing_progress(current_status)
+                
         except Exception as e:
             # If progress bar update fails, close it and log error
             if self.progress_bar:
                 self._close_progress_bar()
             print(f"Progress monitoring error: {str(e)}")
+    
+    def _handle_status_change(self, current_status):
+        """Handle change in status by creating appropriate progress bar"""
+        # Close existing progress bar if any
+        self._close_progress_bar()
+        
+        # Create appropriate progress bar based on the current stage
+        if current_status == "downloading_templates":
+            self._create_templates_progress_bar()
+        elif current_status == "discovering_subdomains":
+            self._create_subdomain_discovery_progress_bar()
+        elif current_status == "probing_subdomains":
+            self._create_subdomain_probing_progress_bar()
+        elif current_status == "scanning_vulnerabilities":
+            self._create_vulnerability_scanning_progress_bar()
+        elif current_status == "completed":
+            self._display_completion_message()
+        elif current_status == "error":
+            self._display_error_message()
+            
+        self.last_status = current_status
+    
+    def _update_existing_progress(self, current_status):
+        """Update existing progress bar based on current status"""
+        if current_status == "downloading_templates":
+            self._pulse_templates_progress()
+        elif current_status == "discovering_subdomains":
+            self._update_subdomain_discovery_progress()
+        elif current_status == "probing_subdomains":
+            self._update_subdomain_probing_progress()
+        elif current_status == "scanning_vulnerabilities":
+            self._update_vulnerability_scanning_progress()
+    
+    def _create_templates_progress_bar(self):
+        """Create progress bar for template downloading"""
+        self.progress_bar = tqdm(desc="📥 Downloading nuclei templates", unit=" bytes")
+        # Indeterminate progress - we'll pulse it
+        self.progress_bar.total = 100
+        self.progress_bar.n = 0
+    
+    def _create_subdomain_discovery_progress_bar(self):
+        """Create progress bar for subdomain discovery"""
+        self.progress_bar = tqdm(desc="📡 Discovering subdomains", unit=" subdomains")
+    
+    def _create_subdomain_probing_progress_bar(self):
+        """Create progress bar for subdomain probing"""
+        total = self.scanner.scan_state.get("subdomains", 0)
+        if total > 0:
+            self.progress_bar = tqdm(desc="🌐 Probing subdomains", total=total, unit=" alive")
+        else:
+            # If no subdomains found, use indeterminate progress
+            self.progress_bar = tqdm(desc="🌐 Probing subdomains", unit=" alive")
+    
+    def _create_vulnerability_scanning_progress_bar(self):
+        """Create progress bar for vulnerability scanning"""
+        total = self.scanner.scan_state.get("alive_subdomains", 0)
+        if total > 0:
+            self.progress_bar = tqdm(desc="🔍 Scanning for vulnerabilities", total=total, unit=" scanned")
+        else:
+            # If no alive subdomains found, use indeterminate progress
+            self.progress_bar = tqdm(desc="🔍 Scanning for vulnerabilities", unit=" scanned")
+    
+    def _display_completion_message(self):
+        """Display completion message with statistics"""
+        duration = self.scanner.scan_state.get("duration", 0)
+        vulns = self.scanner.scan_state.get("vulnerabilities", 0)
+        print(f"✅ Scan completed in {duration:.1f}s, found {vulns} potential vulnerabilities")
+        self.progress_bar = None
+    
+    def _display_error_message(self):
+        """Display error message"""
+        error_msg = self.scanner.scan_state.get("error", "Unknown error")
+        print(f"❌ Scan failed: {error_msg}")
+        self.progress_bar = None
+    
+    def _pulse_templates_progress(self):
+        """Pulse the templates progress bar to show activity"""
+        # For template downloading, just pulse the progress bar
+        self.progress_bar.n = (self.progress_bar.n + 5) % 100
+        self.progress_bar.refresh()
+    
+    def _update_subdomain_discovery_progress(self):
+        """Update subdomain discovery progress bar"""
+        subdomains = self.scanner.scan_state.get("subdomains", 0)
+        if subdomains > 0 and self.progress_bar.n < subdomains:
+            self.progress_bar.update(subdomains - self.progress_bar.n)
+    
+    def _update_subdomain_probing_progress(self):
+        """Update subdomain probing progress bar"""
+        alive = self.scanner.scan_state.get("alive_subdomains", 0)
+        if alive > 0 and self.progress_bar.n < alive:
+            self.progress_bar.update(alive - self.progress_bar.n)
+    
+    def _update_vulnerability_scanning_progress(self):
+        """Update vulnerability scanning progress bar"""
+        # For vulnerability scanning, we approximate progress
+        if self.progress_bar.total and self.progress_bar.total > 0:
+            remaining = max(0, self.progress_bar.total - self.progress_bar.n)
+            step = max(1, int(remaining * 0.1))  # Update in steps of 10%
+            self.progress_bar.update(step)
     
     def _close_progress_bar(self):
         """Safely close the progress bar if it exists"""

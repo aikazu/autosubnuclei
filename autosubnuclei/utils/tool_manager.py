@@ -49,6 +49,11 @@ class ToolManager:
                 "version_cmd": ["nuclei", "-version"]
             }
         }
+        
+        # Apply Windows-specific fixes
+        if self.system == "windows":
+            self._fix_windows_path_issues()
+        
         self._setup_environment()
 
     def _get_latest_release(self, repo: str) -> Tuple[str, str]:
@@ -183,87 +188,476 @@ class ToolManager:
         Setup environment variables and PATH
         """
         # Add tools directory to PATH if not already present
-        tools_path = str(self.tools_dir)
-        if tools_path not in os.environ['PATH']:
-            path_separator = ';' if self.system == "windows" else ':'
-            os.environ['PATH'] = f"{tools_path}{path_separator}{os.environ['PATH']}"
+        tools_path = str(self.tools_dir.resolve())
+        
+        # Check if already in PATH (case-insensitive on Windows)
+        path_env = os.environ.get('PATH', '')
+        path_separator = ';' if self.system == "windows" else ':'
+        path_entries = path_env.split(path_separator)
+        
+        # On Windows, compare lowercase paths
+        if self.system == "windows":
+            if tools_path.lower() not in [p.lower() for p in path_entries]:
+                os.environ['PATH'] = f"{tools_path}{path_separator}{path_env}"
+        else:
+            if tools_path not in path_entries:
+                os.environ['PATH'] = f"{tools_path}{path_separator}{path_env}"
+        
+        logger.debug(f"Updated PATH: {os.environ['PATH']}")
+
+    def _validate_windows_path(self, executable_path: Path) -> bool:
+        """
+        Validate that a Windows executable path is correctly formed and accessible
+        
+        Args:
+            executable_path: Path to the executable
+            
+        Returns:
+            bool: True if valid, False otherwise
+        """
+        # Skip validation for non-Windows systems
+        if self.system != "windows":
+            return True
+            
+        try:
+            # Apply validation steps sequentially with early returns
+            if not self._validate_file_exists(executable_path):
+                return False
+                
+            if not self._validate_file_extension(executable_path, '.exe'):
+                return False
+                
+            if not self._validate_file_access(executable_path):
+                return False
+                
+            if not self._validate_file_size(executable_path, min_size=100):
+                return False
+                
+            if not self._validate_with_powershell(executable_path):
+                return False
+                
+            return True
+        except Exception as e:
+            logger.debug(f"Windows path validation failed: {str(e)}")
+            return False
+            
+    def _validate_file_exists(self, file_path: Path) -> bool:
+        """Validate that a file exists"""
+        return file_path.exists()
+        
+    def _validate_file_extension(self, file_path: Path, extension: str) -> bool:
+        """Validate that a file has the expected extension"""
+        return str(file_path).lower().endswith(extension.lower())
+        
+    def _validate_file_access(self, file_path: Path) -> bool:
+        """Validate that a file is accessible for reading"""
+        try:
+            with open(file_path, 'rb') as f:
+                # Just read a small part to verify access
+                f.read(10)
+            return True
+        except Exception:
+            return False
+            
+    def _validate_file_size(self, file_path: Path, min_size: int) -> bool:
+        """Validate that a file meets the minimum size requirement"""
+        try:
+            if file_path.stat().st_size < min_size:
+                logger.debug(f"File too small to be a valid executable: {file_path}")
+                return False
+            return True
+        except Exception:
+            return False
+            
+    def _validate_with_powershell(self, file_path: Path) -> bool:
+        """Validate file using PowerShell for Windows-specific checks"""
+        try:
+            # Use PowerShell to check if file is readable
+            check_cmd = f'powershell -Command "if (Test-Path -Path \'{str(file_path)}\' -PathType Leaf) {{ $true }} else {{ $false }}"'
+            result = subprocess.run(check_cmd, capture_output=True, text=True, shell=True, timeout=5)
+            if "True" not in result.stdout:
+                logger.debug(f"PowerShell validation failed for {file_path}")
+                return False
+            return True
+        except Exception as e:
+            logger.debug(f"PowerShell validation error (non-critical): {str(e)}")
+            # Don't fail here as this is an additional check
+            return True
+
+    def _fix_windows_path_issues(self) -> None:
+        """
+        Apply additional fixes for Windows-specific path issues.
+        This should be called during initialization on Windows systems.
+        """
+        if self.system != "windows":
+            return
+            
+        logger.debug("Applying Windows-specific path fixes")
+        
+        try:
+            # 1. Try to expand the PATH variable - important for tools using other tools
+            path_env = os.environ.get('PATH', '')
+            
+            # 2. Check for common Windows path issues and fix them
+            # Sometimes Windows PATH entries have quotes or trailing backslashes that cause issues
+            path_entries = path_env.split(';')
+            fixed_entries = []
+            
+            for entry in path_entries:
+                # Remove quotes
+                fixed_entry = entry.strip().strip('"\'')
+                
+                # Remove trailing backslash
+                if fixed_entry.endswith('\\'):
+                    fixed_entry = fixed_entry[:-1]
+                    
+                fixed_entries.append(fixed_entry)
+            
+            # Rebuild PATH
+            fixed_path = ';'.join(fixed_entries)
+            if fixed_path != path_env:
+                logger.debug(f"Fixed Windows PATH: {path_env} -> {fixed_path}")
+                os.environ['PATH'] = fixed_path
+                
+            # 3. Make sure the tools directory is properly added to PATH
+            self._setup_environment()
+            
+            # 4. Log current PATH for debugging
+            logger.debug(f"Current PATH: {os.environ.get('PATH', '')}")
+            
+        except Exception as e:
+            logger.warning(f"Error during Windows path fixes: {str(e)}")
 
     def _is_tool_installed(self, tool_name: str) -> bool:
         """
-        Check if a tool is installed and working
+        Check if a tool is installed and working, with improved Windows support
         """
         tool_info = self.required_tools[tool_name]
         
         # First check if the tool exists in our tools directory
         tool_path_in_dir = self.tools_dir / tool_info["executable"]
+        
         if tool_path_in_dir.exists():
-            # For ProjectDiscovery tools, just checking if the file exists is enough
-            # since their version command can sometimes fail in CI environments
-            return True
+            # For ProjectDiscovery tools, check if file is accessible and has proper size
+            try:
+                if self.system == "windows" and not self._validate_windows_path(tool_path_in_dir):
+                    logger.debug(f"Windows validation failed for {tool_path_in_dir}")
+                    return False
+                    
+                file_size = tool_path_in_dir.stat().st_size
+                if file_size > 1000:  # Arbitrary minimum size for a valid executable
+                    logger.debug(f"Found valid tool at {tool_path_in_dir} ({file_size} bytes)")
+                    return True
+            except Exception as e:
+                logger.debug(f"Error checking tool: {str(e)}")
         
-        # Fall back to checking in PATH
-        tool_path = shutil.which(tool_info["executable"])
-        return tool_path is not None
+        # Fall back to checking in PATH - more robust for Windows
+        try:
+            tool_path = shutil.which(tool_info["executable"])
+            if tool_path:
+                logger.debug(f"Found tool in PATH at {tool_path}")
+                return True
+        except Exception as e:
+            logger.debug(f"Error checking tool in PATH: {str(e)}")
+        
+        return False
 
-    def install_tool(self, tool_name: str) -> bool:
+    def _execute_windows_tool(self, tool_name: str, args: List[str]) -> subprocess.CompletedProcess:
         """
-        Install a tool by downloading and extracting it from GitHub
+        Execute a tool on Windows with proper path handling.
         
+        Args:
+            tool_name: Name of the tool to execute
+            args: Arguments to pass to the tool
+            
         Returns:
-            bool: True if successful, False otherwise
+            CompletedProcess instance with the command result
+        """
+        if self.system != "windows":
+            raise RuntimeError("This method should only be called on Windows systems")
+            
+        # Resolve the executable path
+        exec_path = self._resolve_windows_tool_path(tool_name)
+        
+        # Build and execute the command
+        return self._execute_windows_command(exec_path, args)
+    
+    def _resolve_windows_tool_path(self, tool_name: str) -> str:
+        """
+        Resolve the path to a tool on Windows.
+        
+        Args:
+            tool_name: Name of the tool to find
+            
+        Returns:
+            String containing the quoted path to the tool executable
         """
         tool_info = self.required_tools[tool_name]
+        tool_exec = tool_info["executable"]
         
-        logger.info(f"Installing {tool_name}...")
+        # Check in our tools directory first
+        tool_path_in_dir = self.tools_dir / tool_exec
         
-        download_path = self.tools_dir / f"{tool_name}.zip"
+        if tool_path_in_dir.exists():
+            # Use absolute path with quotes to handle spaces
+            return f'"{str(tool_path_in_dir.resolve())}"'
+            
+        # Fall back to command in PATH
+        tool_in_path = shutil.which(tool_exec)
+        if tool_in_path:
+            return f'"{tool_in_path}"'
+            
+        # Last resort: use just the executable name
+        return tool_exec
+    
+    def _execute_windows_command(self, exec_path: str, args: List[str]) -> subprocess.CompletedProcess:
+        """
+        Execute a command on Windows with the given executable path and arguments.
+        
+        Args:
+            exec_path: Path to the executable (quoted if needed)
+            args: Arguments to pass to the executable
+            
+        Returns:
+            CompletedProcess instance with the command result
+        """
+        # Build command string with arguments
+        cmd = f"{exec_path} {' '.join(args)}"
+        
+        # Set environment with current PATH to ensure tools are found
+        env = os.environ.copy()
+        
+        logger.debug(f"Executing Windows command: {cmd}")
+        
+        # Always use shell=True on Windows for this type of command
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            shell=True,
+            env=env
+        )
+    
+    def test_tool_installation(self, tool_name: str) -> bool:
+        """
+        Test if a tool is properly installed and executable.
+        
+        Args:
+            tool_name: Name of the tool to test
+            
+        Returns:
+            bool: True if test passed, False otherwise
+        """
+        if tool_name not in self.required_tools:
+            logger.error(f"Unknown tool: {tool_name}")
+            return False
+            
+        if not self._is_tool_installed(tool_name):
+            logger.error(f"Tool {tool_name} is not installed")
+            return False
+            
+        tool_info = self.required_tools[tool_name]
         
         try:
-            # Get latest version and download URL
-            version, download_url = self._get_download_url(tool_name)
-            
-            # Download the tool
-            download_file(download_url, download_path)
-            
-            # Verify download
-            if not self._verify_download(download_path):
-                logger.error(f"Downloaded file verification failed for {tool_name}")
-                return False
-            
-            # Extract the tool
-            extract_zip(download_path, self.tools_dir)
-            
-            # Make the tool executable on Unix-like systems
-            if self.system != "windows":
-                tool_path = self.tools_dir / tool_info["executable"]
-                if tool_path.exists():
-                    st = os.stat(tool_path)
-                    os.chmod(tool_path, st.st_mode | stat.S_IEXEC)
-            
-            # Clean up the zip file
-            if download_path.exists():
-                download_path.unlink()
+            if self.system == "windows":
+                result = self._execute_windows_tool(tool_name, ["-h"])
+            else:
+                tool_path = shutil.which(tool_info["executable"])
+                if not tool_path:
+                    tool_path = str(self.tools_dir / tool_info["executable"])
                 
-            # Verify installation
-            if self._is_tool_installed(tool_name):
-                logger.info(f"{tool_name} installed successfully!")
+                result = subprocess.run(
+                    [tool_path, "-h"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+            
+            if result.returncode == 0 or "usage" in result.stdout.lower() or "usage" in result.stderr.lower():
+                logger.info(f"Tool {tool_name} test successful")
                 return True
             else:
-                logger.error(f"Failed to verify {tool_name} installation.")
+                logger.error(f"Tool {tool_name} test failed with return code {result.returncode}")
+                logger.debug(f"Stdout: {result.stdout}")
+                logger.debug(f"Stderr: {result.stderr}")
                 return False
                 
         except Exception as e:
-            logger.error(f"Error installing {tool_name}: {str(e)}")
-            # Clean up partial downloads
-            if download_path.exists():
-                download_path.unlink()
-            # Clean up partial extraction
-            tool_executable = self.tools_dir / tool_info["executable"]
-            if tool_executable.exists():
+            logger.error(f"Error testing {tool_name}: {str(e)}")
+            return False
+    
+    def _ensure_correct_windows_permissions(self, tool_path: Path) -> bool:
+        """
+        Ensure the Windows executable has the correct permissions.
+        
+        Args:
+            tool_path: Path to the tool executable
+            
+        Returns:
+            bool: True if permissions are set correctly, False otherwise
+        """
+        if self.system != "windows":
+            return True
+            
+        try:
+            # On Windows, we need to make sure the file is not blocked
+            # This often happens with files downloaded from the internet
+            if not tool_path.exists():
+                return False
+                
+            # Try to make the file readable and executable
+            # This is a no-op on Windows, but included for completeness
+            current_mode = os.stat(tool_path).st_mode
+            os.chmod(tool_path, current_mode | stat.S_IEXEC | stat.S_IREAD)
+            
+            # On newer Windows versions, we can use PowerShell to unblock the file
+            if os.name == 'nt':
                 try:
-                    tool_executable.unlink()
+                    # Use PowerShell to unblock the file
+                    unblock_cmd = f'powershell -Command "Unblock-File -Path \'{str(tool_path)}\'"'
+                    subprocess.run(unblock_cmd, shell=True, timeout=5)
+                    logger.debug(f"Unblocked file {tool_path}")
+                except Exception as e:
+                    logger.debug(f"Error unblocking file (may be normal): {str(e)}")
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error setting Windows permissions: {str(e)}")
+            return False
+    
+    def install_tool(self, tool_name: str) -> bool:
+        """
+        Install a tool from GitHub releases
+        
+        Args:
+            tool_name: Name of the tool to install
+            
+        Returns:
+            bool: True if the tool was installed successfully, False otherwise
+        """
+        if tool_name not in self.required_tools:
+            logger.error(f"Unknown tool: {tool_name}")
+            return False
+        
+        tool_info = self.required_tools[tool_name]
+        executable = tool_info["executable"]
+        tool_path = self.tools_dir / executable
+        
+        # Check if already installed
+        if tool_path.exists() and self._is_tool_installed(tool_name):
+            logger.info(f"Tool {tool_name} is already installed at {tool_path}")
+            return True
+        
+        try:
+            # If we reached here, we need to install or reinstall the tool
+            logger.info(f"Installing {tool_name}...")
+            
+            # We'll try up to 3 different versions if download fails
+            versions_to_try = []
+            
+            try:
+                # Try getting the latest release version first
+                version, download_url = self._get_latest_release(tool_info["repo"])
+                versions_to_try.append((version, download_url))
+                
+                # Add fallback versions (these might not exist but we'll try)
+                # Format common version patterns to try
+                tool_repo = tool_info["repo"].split('/')[-1]
+                for fallback_version in ["2.0.0", "1.0.1", "1.0.0", "0.10.0"]:
+                    fallback_url = f"https://github.com/{tool_info['repo']}/releases/download/v{fallback_version}/{tool_repo}_{fallback_version}_{self.system}_{self.arch}.zip"
+                    if (fallback_version, fallback_url) not in versions_to_try:
+                        versions_to_try.append((fallback_version, fallback_url))
+            except Exception as e:
+                logger.error(f"Failed to get download URL for {tool_name}: {str(e)}")
+                # Still add fallback versions
+                tool_repo = tool_info["repo"].split('/')[-1]
+                for fallback_version in ["2.0.0", "1.0.1", "1.0.0", "0.10.0"]:
+                    fallback_url = f"https://github.com/{tool_info['repo']}/releases/download/v{fallback_version}/{tool_repo}_{fallback_version}_{self.system}_{self.arch}.zip"
+                    versions_to_try.append((fallback_version, fallback_url))
+            
+            # Try each version until one works
+            last_error = None
+            for version, download_url in versions_to_try:
+                try:
+                    # Create a temporary directory for the download
+                    import tempfile
+                    with tempfile.TemporaryDirectory() as tmp_dir:
+                        download_path = Path(tmp_dir) / f"{tool_name}.zip"
+                        extract_path = Path(tmp_dir) / "extracted"
+                        
+                        # Download the tool
+                        logger.info(f"Downloading {tool_name} v{version} from {download_url}")
+                        retry_with_backoff(
+                            lambda: download_file(download_url, download_path),
+                            max_retries=3,
+                            initial_wait=1,
+                            backoff_factor=2
+                        )
+                        
+                        # Verify the download
+                        if not self._verify_download(download_path):
+                            raise ValueError(f"Downloaded file verification failed for {tool_name}")
+                        
+                        # Extract the tool
+                        logger.info(f"Extracting {tool_name}...")
+                        extract_zip(download_path, extract_path)
+                        
+                        # Find the executable in the extracted files
+                        found_executables = list(extract_path.glob(f"**/{executable}"))
+                        if not found_executables:
+                            raise FileNotFoundError(f"Could not find executable {executable} in extracted files")
+                        
+                        source_executable = found_executables[0]
+                        
+                        # Remove existing installation if exists
+                        if tool_path.exists():
+                            logger.info(f"Removing existing installation of {tool_name}")
+                            tool_path.unlink()
+                        
+                        # Copy the executable to the tools directory
+                        logger.info(f"Installing {tool_name} to {tool_path}")
+                        shutil.copy2(source_executable, tool_path)
+                        
+                        # Make the tool executable (Linux/macOS)
+                        if self.system != "windows":
+                            os.chmod(tool_path, os.stat(tool_path).st_mode | stat.S_IEXEC)
+                        else:
+                            # On Windows, ensure file is properly "unblocked"
+                            self._ensure_correct_windows_permissions(tool_path)
+                        
+                        # Verify installation
+                        if not self.test_tool_installation(tool_name):
+                            raise RuntimeError(f"Tool {tool_name} was installed but failed functional testing")
+                        
+                        # Successfully installed
+                        logger.info(f"Successfully installed {tool_name} v{version} at {tool_path}")
+                        return True
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to install {tool_name} v{version}: {str(e)}")
+                    last_error = e
+                    continue  # Try next version
+            
+            # If we get here, all versions failed
+            if last_error:
+                logger.error(f"All installation attempts failed for {tool_name}. Last error: {str(last_error)}")
+            else:
+                logger.error(f"All installation attempts failed for {tool_name} with unknown errors.")
+                
+            return False
+        
+        except Exception as e:
+            logger.error(f"Failed to install {tool_name}: {str(e)}")
+            
+            # Try to clean up any partial installations
+            if tool_path.exists():
+                try:
+                    tool_path.unlink()
+                    logger.info(f"Cleaned up partial installation at {tool_path}")
                 except Exception as cleanup_error:
-                    logger.warning(f"Error during cleanup: {str(cleanup_error)}")
+                    logger.warning(f"Failed to clean up partial installation: {str(cleanup_error)}")
+            
             return False
 
     def update_tool(self, tool_name: str) -> bool:
@@ -293,7 +687,7 @@ class ToolManager:
 
     def get_tool_version(self, tool_name: str) -> Optional[str]:
         """
-        Get the version of an installed tool
+        Get the version of an installed tool with improved Windows support
         """
         if not self._is_tool_installed(tool_name):
             return None
@@ -302,23 +696,18 @@ class ToolManager:
         try:
             # Check if the tool exists in our tools directory
             tool_path_in_dir = self.tools_dir / tool_info["executable"]
-            cmd = None
             
             if tool_path_in_dir.exists():
                 # Use absolute path for the command
-                if self.system == "windows":
-                    cmd = f"{tool_path_in_dir.absolute()} -version"
-                else:
-                    cmd = [str(tool_path_in_dir.absolute()), "-version"]
+                exec_path = str(tool_path_in_dir.resolve())
             else:
                 # Fall back to using the command from PATH
-                if self.system == "windows":
-                    cmd = f"{tool_info['executable']} -version"
-                else:
-                    cmd = [tool_info['executable'], "-version"]
+                exec_path = tool_info["executable"]
             
-            # For Windows, always use shell=True with string command
+            # Build command
             if self.system == "windows":
+                # On Windows, use string command with quotes around the path
+                cmd = f'"{exec_path}" -version'
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
@@ -328,6 +717,7 @@ class ToolManager:
                 )
             else:
                 # For non-Windows, use command list without shell
+                cmd = [exec_path, "-version"]
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
@@ -361,16 +751,29 @@ class ToolManager:
                 
         except Exception as e:
             logger.debug(f"Failed to get version for {tool_name}: {str(e)}")
+        
         return None
 
     def _add_to_path(self, tool_path: Path) -> None:
         """
         Add tool directory to system PATH
         """
-        tool_dir = str(tool_path.parent)
-        if tool_dir not in os.environ['PATH']:
-            path_separator = ';' if self.system == "windows" else ':'
-            os.environ['PATH'] = f"{tool_dir}{path_separator}{os.environ['PATH']}"
+        tool_dir = str(tool_path.parent.resolve())
+        
+        # Check if already in PATH (case-insensitive on Windows)
+        path_env = os.environ.get('PATH', '')
+        path_separator = ';' if self.system == "windows" else ':'
+        path_entries = path_env.split(path_separator)
+        
+        # On Windows, compare lowercase paths
+        if self.system == "windows":
+            if tool_dir.lower() not in [p.lower() for p in path_entries]:
+                os.environ['PATH'] = f"{tool_dir}{path_separator}{path_env}"
+        else:
+            if tool_dir not in path_entries:
+                os.environ['PATH'] = f"{tool_dir}{path_separator}{path_env}"
+                
+        logger.debug(f"Updated PATH with tool directory: {tool_dir}")
 
     def install_all_tools(self) -> None:
         """
