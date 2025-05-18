@@ -9,11 +9,56 @@ import subprocess
 import logging
 import zipfile
 import requests
+import time
+import random
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, Callable, TypeVar
 from tqdm import tqdm
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+# Type variable for generic return type
+T = TypeVar('T')
+
+def retry_with_backoff(func: Callable[[], T], max_retries=3, base_delay=1, max_delay=60) -> T:
+    """
+    Execute a function with exponential backoff retry logic.
+    
+    Args:
+        func: Function to execute
+        max_retries: Maximum number of retry attempts
+        base_delay: Initial delay between retries in seconds
+        max_delay: Maximum delay between retries in seconds
+        
+    Returns:
+        The result of the function call
+        
+    Raises:
+        The last exception encountered after all retries
+    """
+    logger = logging.getLogger(__name__)
+    
+    retries = 0
+    last_exception = None
+    
+    while retries <= max_retries:
+        try:
+            return func()
+        except Exception as e:
+            last_exception = e
+            retries += 1
+            
+            if retries > max_retries:
+                break
+                
+            # Calculate delay with exponential backoff and jitter
+            delay = min(base_delay * (2 ** (retries - 1)) + random.uniform(0, 1), max_delay)
+            
+            logger.warning(f"Retry attempt {retries}/{max_retries} after {delay:.2f}s due to: {str(e)}")
+            time.sleep(delay)
+    
+    # If we reach here, all retries failed
+    raise last_exception
 
 def setup_logging(log_file: Optional[Path] = None) -> None:
     """

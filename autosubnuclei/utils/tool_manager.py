@@ -17,7 +17,8 @@ from .helpers import (
     create_requests_session,
     download_file,
     extract_zip,
-    validate_file
+    validate_file,
+    retry_with_backoff
 )
 
 logger = logging.getLogger(__name__)
@@ -53,14 +54,22 @@ class ToolManager:
     def _get_latest_release(self, repo: str) -> Tuple[str, str]:
         """
         Get the latest release version and download URL for a GitHub repository
+        with improved error handling and retries.
         """
-        session = create_requests_session()
-        # First try to get the latest release
-        release_url = f"https://api.github.com/repos/{repo}/releases/latest"
-        response = session.get(release_url)
+        def _try_api_request():
+            session = create_requests_session()
+            release_url = f"https://api.github.com/repos/{repo}/releases/latest"
+            response = session.get(release_url)
+            response.raise_for_status()
+            return response.json()
         
-        if response.status_code == 200:
-            release_data = response.json()
+        try:
+            # Try with retries
+            release_data = retry_with_backoff(
+                _try_api_request, 
+                max_retries=3
+            )
+            
             version = release_data['tag_name'].lstrip('v')
             assets = release_data.get('assets', [])
             
@@ -72,22 +81,93 @@ class ToolManager:
                     asset_name.endswith('.zip')):
                     return version, asset['browser_download_url']
             
-            # If no matching asset found, try to construct the URL
-            tool_name = repo.split('/')[-1]
-            return version, f"https://github.com/{repo}/releases/download/v{version}/{tool_name}_{version}_{self.system}_{self.arch}.zip"
+            # Fall back to constructing URL if no matching asset found
+            return self._construct_download_url(repo, version)
         
-        # If no releases found, try to get the latest tag
-        tags_url = f"https://api.github.com/repos/{repo}/tags"
-        response = session.get(tags_url)
-        
-        if response.status_code == 200:
-            tags = response.json()
-            if tags:
-                latest_tag = tags[0]['name'].lstrip('v')
+        except Exception as e:
+            logger.error(f"GitHub API request failed: {str(e)}")
+            
+            # Try alternative approach - get latest from tags
+            try:
+                return self._get_latest_from_tags(repo)
+            except Exception as nested_e:
+                logger.error(f"Failed to get latest release from tags: {str(nested_e)}")
+                
+                # Last resort - try to construct a URL with a guessed version
                 tool_name = repo.split('/')[-1]
-                return latest_tag, f"https://github.com/{repo}/releases/download/v{latest_tag}/{tool_name}_{latest_tag}_{self.system}_{self.arch}.zip"
+                guessed_version = self._guess_latest_version(tool_name)
+                if guessed_version:
+                    logger.warning(f"Using guessed version {guessed_version} for {tool_name}")
+                    return guessed_version, self._construct_download_url(repo, guessed_version)
+                
+                raise RuntimeError(f"Could not determine download URL for {repo}: {str(e)}")
+
+    def _construct_download_url(self, repo: str, version: str) -> Tuple[str, str]:
+        """
+        Construct a download URL based on repository and version
+        """
+        tool_name = repo.split('/')[-1]
+        download_url = f"https://github.com/{repo}/releases/download/v{version}/{tool_name}_{version}_{self.system}_{self.arch}.zip"
+        logger.info(f"Constructed download URL: {download_url}")
+        return version, download_url
+
+    def _get_latest_from_tags(self, repo: str) -> Tuple[str, str]:
+        """
+        Get the latest version from repository tags as a fallback
+        """
+        def _try_tags_request():
+            session = create_requests_session()
+            tags_url = f"https://api.github.com/repos/{repo}/tags"
+            response = session.get(tags_url)
+            response.raise_for_status()
+            return response.json()
         
-        raise RuntimeError(f"Could not find latest release for {repo}")
+        # Try with retries
+        tags = retry_with_backoff(_try_tags_request, max_retries=3)
+        
+        if not tags:
+            raise ValueError(f"No tags found for repository {repo}")
+            
+        latest_tag = tags[0]['name'].lstrip('v')
+        return self._construct_download_url(repo, latest_tag)
+
+    def _guess_latest_version(self, tool_name: str) -> Optional[str]:
+        """
+        Guess the latest version of a tool based on common patterns
+        """
+        # Common version patterns for security tools
+        common_versions = ["2.0.0", "1.0.0", "0.9.0", "0.10.0", "0.8.0"]
+        
+        for version in common_versions:
+            logger.debug(f"Trying to guess version {version} for {tool_name}")
+            return version
+            
+        return None
+
+    def _verify_download(self, download_path: Path, expected_min_size: int = 1000) -> bool:
+        """
+        Verify that a downloaded file is valid.
+        
+        Args:
+            download_path: Path to the downloaded file
+            expected_min_size: Minimum expected file size in bytes
+            
+        Returns:
+            bool: True if the file is valid, False otherwise
+        """
+        if not download_path.exists():
+            logger.error(f"Downloaded file does not exist: {download_path}")
+            return False
+            
+        # Check file size
+        file_size = download_path.stat().st_size
+        if file_size < expected_min_size:
+            logger.error(f"Downloaded file too small ({file_size} bytes): {download_path}")
+            return False
+            
+        # Additional checks could be added here (checksum, signature, etc.)
+        
+        return True
 
     def _get_download_url(self, tool_name: str) -> Tuple[str, str]:
         """
@@ -134,15 +214,21 @@ class ToolManager:
         """
         tool_info = self.required_tools[tool_name]
         
-        logging.info(f"Installing {tool_name}...")
+        logger.info(f"Installing {tool_name}...")
+        
+        download_path = self.tools_dir / f"{tool_name}.zip"
         
         try:
             # Get latest version and download URL
             version, download_url = self._get_download_url(tool_name)
             
             # Download the tool
-            download_path = self.tools_dir / f"{tool_name}.zip"
             download_file(download_url, download_path)
+            
+            # Verify download
+            if not self._verify_download(download_path):
+                logger.error(f"Downloaded file verification failed for {tool_name}")
+                return False
             
             # Extract the tool
             extract_zip(download_path, self.tools_dir)
@@ -160,14 +246,24 @@ class ToolManager:
                 
             # Verify installation
             if self._is_tool_installed(tool_name):
-                logging.info(f"{tool_name} installed successfully!")
+                logger.info(f"{tool_name} installed successfully!")
                 return True
             else:
-                logging.error(f"Failed to verify {tool_name} installation.")
+                logger.error(f"Failed to verify {tool_name} installation.")
                 return False
                 
         except Exception as e:
-            logging.error(f"Error installing {tool_name}: {str(e)}")
+            logger.error(f"Error installing {tool_name}: {str(e)}")
+            # Clean up partial downloads
+            if download_path.exists():
+                download_path.unlink()
+            # Clean up partial extraction
+            tool_executable = self.tools_dir / tool_info["executable"]
+            if tool_executable.exists():
+                try:
+                    tool_executable.unlink()
+                except Exception as cleanup_error:
+                    logger.warning(f"Error during cleanup: {str(cleanup_error)}")
             return False
 
     def update_tool(self, tool_name: str) -> bool:

@@ -42,8 +42,6 @@ output/
 !requirements.txt
 tools/
 .cursor/
-TASK.MD
-PLANNING.MD
 
 # Nuclei templates
 nuclei-templates/

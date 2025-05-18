@@ -11,19 +11,68 @@ from typing import Dict, Any, Optional, List
 logger = logging.getLogger(__name__)
 
 class ConfigManager:
-    def __init__(self):
-        # Use root directory for config file
-        self.config_dir = Path(__file__).parent.parent.parent  # Root workspace directory
-        self.config_file = self.config_dir / "config.json"
+    def __init__(self, config_path=None):
+        """
+        Initialize the ConfigManager with a specified or default config path.
+        
+        Args:
+            config_path (str or Path, optional): Path to the config file.
+                If not provided, will search in standard locations.
+        """
+        # If path specified, use it directly
+        if config_path:
+            self.config_file = Path(config_path).resolve()
+            self.config_dir = self.config_file.parent
+        else:
+            # Try to find config in various locations
+            self.config_file = self._find_config_file()
+            self.config_dir = self.config_file.parent
+            
         self._ensure_config_exists()
+
+    def _find_config_file(self):
+        """
+        Find the configuration file in various possible locations.
+        
+        Returns:
+            Path: Resolved path to the config file (may not exist yet)
+        """
+        # Possible locations in priority order
+        possible_locations = [
+            # 1. In the same directory as the executing script
+            Path(__file__).parent.parent.parent / "config.json",
+            
+            # 2. Root workspace directory
+            Path.cwd() / "config.json",
+            
+            # 3. In config subdirectory of workspace
+            Path.cwd() / "config" / "config.json",
+            
+            # 4. In user's home directory
+            Path.home() / ".autosubnuclei" / "config.json"
+        ]
+        
+        # Try each location
+        for loc in possible_locations:
+            if loc.exists():
+                logger.debug(f"Found existing config file at: {loc}")
+                return loc
+        
+        # Default to root workspace directory relative to module
+        default_location = Path(__file__).parent.parent.parent / "config.json"
+        logger.debug(f"Using default config location: {default_location}")
+        return default_location
 
     def _ensure_config_exists(self) -> None:
         """
         Ensure config file exists with default values
         """
         if not self.config_file.exists():
+            # Make sure the directory exists
+            self.config_dir.mkdir(parents=True, exist_ok=True)
+            
             # Check if old config exists in config/ directory
-            old_config_path = self.config_dir / "config" / "config.json"
+            old_config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
             if old_config_path.exists():
                 # Migrate config from old location
                 try:
@@ -62,6 +111,9 @@ class ConfigManager:
         Save configuration to file
         """
         try:
+            # Ensure directory exists
+            self.config_dir.mkdir(parents=True, exist_ok=True)
+            
             with open(self.config_file, 'w') as f:
                 json.dump(config, f, indent=4)
         except Exception as e:
