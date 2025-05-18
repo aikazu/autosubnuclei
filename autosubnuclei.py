@@ -113,6 +113,19 @@ def scan(domain, templates, output, no_notify, severities, log_file, concurrency
             progress_monitor=progress_monitor
         ))
 
+        # After scan completion, check if results.txt exists and has content
+        results_file = domain_output_dir / "results.txt"
+        if results_file.exists() and results_file.stat().st_size == 0:
+            # If results.txt is empty but we reported vulnerabilities, check for nuclei result files
+            state_file = domain_output_dir / "scan_state.json"
+            if state_file.exists():
+                with open(state_file, 'r') as f:
+                    state = json.load(f)
+                    if state.get("vulnerabilities", 0) > 0:
+                        print(f"⚠️ Note: Results file exists but is empty despite finding {state['vulnerabilities']} vulnerabilities.")
+                        print("   This is a known issue that has been fixed in the latest version.")
+                        print("   To view results, check for nuclei_results_* files in the output directory.")
+
     except Exception as err:
         logger.error(f"Fatal error: {err}")
         print(f"❌ Error: {err}")
@@ -155,34 +168,92 @@ def results(domain, output):
             
             # Check if results file exists
             results_file = domain_output_dir / "results.txt"
-            if results_file.exists() and state.get("vulnerabilities", 0) > 0:
+            vulnerabilities_found = state.get("vulnerabilities", 0)
+            
+            if vulnerabilities_found > 0:
                 print("\n🔍 Vulnerability Summary:")
                 
-                # Read and categorize results by severity
-                severities = {"critical": [], "high": [], "medium": [], "low": [], "info": []}
-                with open(results_file, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
+                # Handle case where results.txt is empty but vulnerabilities were found
+                if not results_file.exists() or results_file.stat().st_size == 0:
+                    # Look for nuclei_results_* files
+                    nuclei_results = list(domain_output_dir.glob("nuclei_results_*"))
+                    if nuclei_results:
+                        print(f"⚠️ results.txt file is empty, but found {len(nuclei_results)} nuclei result files.")
                         
-                        # Try to extract severity
-                        for sev in severities.keys():
-                            if f"[{sev}]" in line.lower():
-                                severities[sev].append(line)
-                                break
-                
-                # Print counts by severity
-                sev_table = []
-                for sev, items in severities.items():
-                    if items:
-                        sev_table.append([sev.capitalize(), len(items)])
-                
-                if sev_table:
-                    print(tabulate(sev_table, headers=["Severity", "Count"], tablefmt="simple"))
+                        # Consolidate all nuclei result files into memory
+                        all_results = []
+                        for result_file in nuclei_results:
+                            if result_file.exists() and result_file.stat().st_size > 0:
+                                with open(result_file, 'r') as f:
+                                    all_results.extend([line.strip() for line in f if line.strip()])
+                        
+                        # Process the results
+                        if all_results:
+                            # Extract severities
+                            severities = {"critical": [], "high": [], "medium": [], "low": [], "info": []}
+                            for line in all_results:
+                                for sev in severities.keys():
+                                    if f"[{sev}]" in line.lower():
+                                        severities[sev].append(line)
+                                        break
+                            
+                            # Print counts by severity
+                            sev_table = []
+                            for sev, items in severities.items():
+                                if items:
+                                    sev_table.append([sev.capitalize(), len(items)])
+                            
+                            if sev_table:
+                                print(tabulate(sev_table, headers=["Severity", "Count"], tablefmt="simple"))
+                                
+                                # Show raw results
+                                print("\nRaw results from nuclei scan:")
+                                for i, result in enumerate(all_results[:10]):  # Limit to first 10
+                                    print(f"  {result}")
+                                
+                                if len(all_results) > 10:
+                                    print(f"  ... and {len(all_results) - 10} more results")
+                                
+                                # Fix the issue
+                                print("\n🛠️ Would you like to fix the empty results.txt file? (y/n)")
+                                response = input().strip().lower()
+                                if response == 'y' or response == 'yes':
+                                    # Combine all results into results.txt
+                                    with open(results_file, 'w') as f:
+                                        f.write("\n".join(all_results))
+                                    print(f"✅ Successfully wrote {len(all_results)} results to {results_file}")
+                        else:
+                            print("No content found in nuclei result files despite vulnerability count.")
+                    else:
+                        print("No results found. This could be due to a known issue with results processing.")
+                        print("Please run the scan again with the latest version.")
+                else:
+                    # Normal case - results.txt exists with content
+                    # Read and categorize results by severity
+                    severities = {"critical": [], "high": [], "medium": [], "low": [], "info": []}
+                    with open(results_file, 'r') as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            
+                            # Try to extract severity
+                            for sev in severities.keys():
+                                if f"[{sev}]" in line.lower():
+                                    severities[sev].append(line)
+                                    break
                     
-                    # Show path to detailed results
-                    print(f"\nDetailed results are available at: {results_file}")
+                    # Print counts by severity
+                    sev_table = []
+                    for sev, items in severities.items():
+                        if items:
+                            sev_table.append([sev.capitalize(), len(items)])
+                    
+                    if sev_table:
+                        print(tabulate(sev_table, headers=["Severity", "Count"], tablefmt="simple"))
+                        
+                        # Show path to detailed results
+                        print(f"\nDetailed results are available at: {results_file}")
         except Exception as e:
             print(f"❌ Error reading scan results: {str(e)}")
     else:

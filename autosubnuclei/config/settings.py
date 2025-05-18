@@ -5,6 +5,7 @@ Configuration settings and validation functions
 import re
 from pathlib import Path
 from typing import List
+from urllib.parse import urlparse
 
 # Default configuration
 NUCLEI_CONFIG = {
@@ -14,8 +15,13 @@ NUCLEI_CONFIG = {
 
 def validate_domain(domain: str) -> bool:
     """
-    Validate domain format
+    Validate domain format - supports both raw domains and URLs
     """
+    # Handle URLs by extracting domain
+    if domain.startswith('http://') or domain.startswith('https://'):
+        parsed = urlparse(domain)
+        domain = parsed.netloc
+    
     domain_regex = r'^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
     return bool(re.match(domain_regex, domain))
 

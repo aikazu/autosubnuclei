@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Improved documentation structure following standardized format
 - Updated README to be more concise and focused
+- Updated all documentation to reflect current project state
 - Enhanced configuration file management with multi-location search
 - Optimized notification system to handle extremely large result sets
 - Modified Nuclei scanning process for significantly reduced memory usage
@@ -46,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resolved memory leaks when processing large domain lists
 - Addressed excessive memory usage during nuclei scans
 - Fixed temporary file cleanup for large scans
+- Fixed empty results.txt bug when reporting vulnerabilities found by nuclei
 
 ### Pending
 - Additional logging enhancements

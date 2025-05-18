@@ -13,6 +13,8 @@ Security professionals need efficient ways to discover and scan subdomains for v
 - 🎯 Vulnerability scanning with Nuclei
 - 🔔 Discord notifications for scan updates
 - 🛠️ Automatic tool installation and updates
+- ⏸️ Scan resume capability for interrupted scans
+- 🧠 Memory-optimized for handling large domain lists
 
 ## Installation
 
@@ -63,6 +65,33 @@ python autosubnuclei.py results example.com
 python autosubnuclei.py update
 ```
 
+### Resume Interrupted Scan
+```bash
+python autosubnuclei.py resume example.com
+```
+
+## Advanced Usage
+
+### Specify Severity Levels
+```bash
+python autosubnuclei.py scan example.com --severities critical,high,medium
+```
+
+### Use Custom Templates
+```bash
+python autosubnuclei.py scan example.com --templates /path/to/templates
+```
+
+### Resume from Specific Checkpoint
+```bash
+python autosubnuclei.py resume example.com --from-checkpoint /path/to/checkpoint.json
+```
+
+### Force Resume from a Specific Phase
+```bash
+python autosubnuclei.py resume example.com --force-phase subdomain
+```
+
 ## Technology Stack
 
 - **Python 3.7+**: Core programming language
@@ -71,6 +100,7 @@ python autosubnuclei.py update
 - **ProjectDiscovery Tools**: Subfinder, Httpx, Nuclei
 - **Requests/Aiohttp**: HTTP clients for API interactions
 - **Tqdm**: Progress indicators
+- **Psutil**: System resource monitoring
 
 ## Project Structure
 
@@ -79,12 +109,21 @@ autosubnuclei/
 ├── autosubnuclei.py          # Main CLI entry point
 ├── autosubnuclei/            # Source code
 │   ├── commands/            # CLI commands
+│   │   ├── resume.py        # Resume command implementation
+│   │   └── setup.py         # Setup command implementation
 │   ├── config/             # Configuration management
 │   ├── core/               # Core scanning functionality
+│   │   ├── scanner.py      # Main scanning logic
+│   │   └── checkpoint_manager.py # Checkpoint handling
 │   └── utils/              # Utility functions
 ├── config.json              # User configuration
 ├── tools/                    # Downloaded security tools
 └── output/                   # Scan results
+    └── example.com/          # Domain-specific results
+        ├── subdomains.txt    # Discovered subdomains
+        ├── alive.txt         # Alive subdomains
+        ├── results.txt       # Scan results
+        └── checkpoints/      # Resume checkpoints
 ```
 
 ## Additional Documentation
@@ -92,6 +131,7 @@ autosubnuclei/
 - [PLANNING.md](PLANNING.md): Project vision and roadmap
 - [ARCHITECTURE.md](ARCHITECTURE.md): Technical architecture
 - [TASK.md](TASK.md): Current development tasks
+- [TECH-STACK.md](TECH-STACK.md): Detailed technology information
 
 ## License
 

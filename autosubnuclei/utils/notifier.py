@@ -57,26 +57,56 @@ class Notifier:
         message = f"🚀 Starting security scan for domain: {domain}"
         self._send_discord_message(message, "Scan Started")
 
-    def send_subdomains_found(self, domain: str, subdomains: List[str]) -> None:
+    def send_subdomains_found(self, domain: str, subdomains: List[str], total: Optional[int] = None) -> None:
         """
         Send notification about found subdomains
+        
+        Args:
+            domain: The domain being scanned
+            subdomains: List of subdomains to include in the notification
+            total: Optional total count of subdomains (used when only sending a sample)
         """
         if not self.config_manager.is_notifications_enabled():
             return
 
-        message = f"🔍 Found {len(subdomains)} subdomains for {domain}:\n"
-        message += "\n".join(f"• {sub}" for sub in subdomains)
+        count = total if total is not None else len(subdomains)
+        sample_note = ""
+        if total is not None and len(subdomains) < total:
+            sample_note = f" (showing {len(subdomains)} sample)"
+            
+        message = f"🔍 Found {count} subdomains for {domain}{sample_note}:\n"
+        # Limit the number of subdomains shown to avoid message size limits
+        message += "\n".join(f"• {sub}" for sub in subdomains[:100])
+        
+        if len(subdomains) > 100:
+            message += f"\n... and {len(subdomains) - 100} more"
+            
         self._send_discord_message(message, "Subdomains Found")
 
-    def send_alive_subdomains(self, domain: str, alive_subdomains: List[str]) -> None:
+    def send_alive_subdomains(self, domain: str, alive_subdomains: List[str], total: Optional[int] = None) -> None:
         """
         Send notification about alive subdomains
+        
+        Args:
+            domain: The domain being scanned
+            alive_subdomains: List of alive subdomains to include in the notification
+            total: Optional total count of alive subdomains (used when only sending a sample)
         """
         if not self.config_manager.is_notifications_enabled():
             return
 
-        message = f"🌐 Found {len(alive_subdomains)} alive subdomains for {domain}:\n"
-        message += "\n".join(f"• {sub}" for sub in alive_subdomains)
+        count = total if total is not None else len(alive_subdomains)
+        sample_note = ""
+        if total is not None and len(alive_subdomains) < total:
+            sample_note = f" (showing {len(alive_subdomains)} sample)"
+            
+        message = f"🌐 Found {count} alive subdomains for {domain}{sample_note}:\n"
+        # Limit the number of subdomains shown to avoid message size limits
+        message += "\n".join(f"• {sub}" for sub in alive_subdomains[:100])
+        
+        if len(alive_subdomains) > 100:
+            message += f"\n... and {len(alive_subdomains) - 100} more"
+            
         self._send_discord_message(message, "Alive Subdomains")
 
     def send_scan_results(self, domain: str, results_file: Path) -> None:
@@ -114,4 +144,18 @@ class Notifier:
         Send a cancellation notification
         """
         message = f"🚫 Scan cancelled for {domain}\nReason: {reason}"
-        self._send_discord_message(message, "Scan Cancelled") 
+        self._send_discord_message(message, "Scan Cancelled")
+
+    def send_error_notification(self, domain: str, error_message: str) -> None:
+        """
+        Send notification about scan error
+        
+        Args:
+            domain: The domain being scanned
+            error_message: Error message to include in the notification
+        """
+        if not self.config_manager.is_notifications_enabled():
+            return
+            
+        message = f"❌ Error scanning domain {domain}:\n```\n{error_message}\n```"
+        self._send_discord_message(message, "Scan Error") 

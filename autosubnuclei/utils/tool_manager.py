@@ -8,6 +8,7 @@ import sys
 import stat
 import subprocess
 import logging
+import asyncio
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 import re
@@ -774,6 +775,86 @@ class ToolManager:
                 os.environ['PATH'] = f"{tool_dir}{path_separator}{path_env}"
                 
         logger.debug(f"Updated PATH with tool directory: {tool_dir}")
+        
+    async def ensure_tool_exists(self, tool_name: str) -> bool:
+        """
+        Ensure that a required tool exists and is working properly.
+        If the tool is missing, attempt to install it.
+        
+        Args:
+            tool_name: Name of the tool to verify/install
+            
+        Returns:
+            bool: True if the tool exists and is working, False otherwise
+        """
+        if tool_name not in self.required_tools:
+            logger.error(f"Unknown tool: {tool_name}")
+            return False
+            
+        # Check if tool is already installed and working
+        if self._is_tool_installed(tool_name) and self.test_tool_installation(tool_name):
+            logger.debug(f"Tool {tool_name} is already installed and working")
+            return True
+            
+        # Tool is missing or not working, attempt to install it
+        logger.info(f"Installing {tool_name}...")
+        
+        # Convert to async installation
+        loop = asyncio.get_event_loop()
+        success = await loop.run_in_executor(None, self.install_tool, tool_name)
+        
+        if success:
+            logger.info(f"Successfully installed {tool_name}")
+            return True
+        else:
+            logger.error(f"Failed to install {tool_name}")
+            return False
+            
+    async def get_tool_path(self, tool_name: str) -> Optional[Path]:
+        """
+        Get the absolute path to a tool executable.
+        
+        Args:
+            tool_name: Name of the tool
+            
+        Returns:
+            Optional[Path]: Path to the tool executable if found, None otherwise
+        """
+        if tool_name not in self.required_tools:
+            logger.error(f"Unknown tool: {tool_name}")
+            return None
+            
+        # Ensure the tool exists before returning the path
+        if not await self.ensure_tool_exists(tool_name):
+            logger.error(f"Tool {tool_name} does not exist and could not be installed")
+            return None
+            
+        tool_info = self.required_tools[tool_name]
+        tool_path = self.tools_dir / tool_info["executable"]
+        
+        if tool_path.exists():
+            return tool_path
+            
+        # If tool is not in our tools directory, try to find it in PATH
+        try:
+            # Use 'where' on Windows, 'which' on other platforms
+            if self.system == "windows":
+                cmd = f"where {tool_info['executable']}"
+                shell = True
+            else:
+                cmd = ["which", tool_info["executable"]]
+                shell = False
+                
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=shell)
+            
+            if result.returncode == 0:
+                # Get the first match
+                path_str = result.stdout.strip().split('\n')[0]
+                return Path(path_str)
+        except Exception as e:
+            logger.debug(f"Error finding tool in PATH: {str(e)}")
+            
+        return None
 
     def install_all_tools(self) -> None:
         """

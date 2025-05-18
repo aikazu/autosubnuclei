@@ -1158,17 +1158,29 @@ class SecurityScanner:
             
             # Parse and save results
             results_text = ""
+            total_vulns = 0
+            
+            # Collect results from each batch output file
             for result in results:
-                if "raw_result" in result:
-                    results_text += result["raw_result"] + "\n"
+                output_file = result.get("output_file")
+                if output_file and output_file.exists():
+                    with open(output_file, 'r') as f:
+                        batch_content = f.read()
+                        if batch_content.strip():
+                            results_text += batch_content + "\n"
+                            total_vulns += result.get("vulnerabilities", 0)
                     
             # Save results to file
             results_file = self.output_dir / "results.txt"
             with open(results_file, "w") as f:
                 f.write(results_text)
+            
+            # Count vulnerabilities as non-empty lines in the results file
+            vulnerability_count = 0
+            if results_text.strip():
+                vulnerability_count = sum(1 for line in results_text.splitlines() if line.strip())
                 
-            # Count vulnerabilities found
-            vulnerability_count = len(results)
+            # Update vulnerability count
             self.scan_state["vulnerabilities"] = vulnerability_count
             
             # Update statistics in the checkpoint
@@ -1301,13 +1313,30 @@ class SecurityScanner:
     def _clean_temp_files(self) -> None:
         """
         Clean up temporary files to free disk space.
+        Preserves nuclei result files if they contain vulnerability data.
         """
         try:
-            # Get all temporary files in the output directory
+            # Get temporary files that can be safely deleted
             temp_files = list(self.output_dir.glob("nuclei_batch_*")) + \
                         list(self.output_dir.glob("nuclei_targets_*")) + \
-                        list(self.output_dir.glob("nuclei_results_*")) + \
                         list(self.output_dir.glob("*_temp_*"))
+            
+            # Handle nuclei result files - only delete if results.txt has been created
+            results_file = self.output_dir / "results.txt"
+            if results_file.exists() and results_file.stat().st_size > 0:
+                # If we've successfully written consolidated results, delete individual result files
+                temp_files += list(self.output_dir.glob("nuclei_results_*"))
+            else:
+                # Check each nuclei result file
+                for result_file in self.output_dir.glob("nuclei_results_*"):
+                    if result_file.exists():
+                        # Check if the file has content
+                        if result_file.stat().st_size == 0:
+                            # Empty file, can be deleted
+                            temp_files.append(result_file)
+                        else:
+                            # File has content, preserve it and log
+                            logger.info(f"Preserving nuclei result file: {result_file}")
             
             for temp_file in temp_files:
                 if temp_file.exists():

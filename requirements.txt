@@ -8,3 +8,4 @@ pydantic>=1.9.0
 rich>=10.9.0
 structlog>=21.1.0
 tabulate>=0.8.9
+psutil>=5.9.0
